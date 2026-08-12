@@ -46,7 +46,7 @@ export class LiveSeatsAeroClient implements SeatsAeroClient {
     return this.get<Route[]>("/routes", { source });
   }
 
-  refresh(availabilityIds: string[]): Promise<RefreshResponse> {
+  async refresh(availabilityIds: string[]): Promise<RefreshResponse> {
     if (availabilityIds.length === 0 || availabilityIds.length > 250) {
       throw new SeatsAeroError(
         400,
@@ -74,14 +74,31 @@ export class LiveSeatsAeroClient implements SeatsAeroClient {
     let delay = this.baseDelayMs;
 
     for (let attempt = 0; attempt < this.maxRetries; attempt++) {
-      const res = await fetch(`${BASE_URL}${path}`, {
-        ...init,
-        headers: {
-          Accept: "application/json",
-          "Partner-Authorization": this.apiKey,
-          ...(init.headers ?? {}),
-        },
-      });
+      let res: Response;
+      try {
+        res = await fetch(`${BASE_URL}${path}`, {
+          ...init,
+          headers: {
+            Accept: "application/json",
+            "Partner-Authorization": this.apiKey,
+            ...(init.headers ?? {}),
+          },
+        });
+      } catch (err) {
+        // Network-level failure (DNS, connection reset, TLS, abort): retry it
+        // the same way we retry a 429, since fetch() never even got a response.
+        if (attempt < this.maxRetries - 1) {
+          await sleep(delay);
+          delay *= 2;
+          continue;
+        }
+        // status 0 marks a network-level failure — no HTTP response was ever
+        // received, so there's no real status code to report.
+        throw new SeatsAeroError(
+          0,
+          `network error calling ${path}: ${(err as Error).message}`,
+        );
+      }
 
       this.captureQuota(res);
 

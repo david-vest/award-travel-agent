@@ -64,6 +64,39 @@ describe("LiveSeatsAeroClient", () => {
     ).rejects.toMatchObject({ status: 400 });
   });
 
+  it("retries on a network-level fetch rejection and succeeds on a later attempt", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockRejectedValueOnce(new TypeError("fetch failed"))
+      .mockResolvedValueOnce(
+        okResponse({ data: [], count: 0, hasMore: false, cursor: 0 }),
+      );
+
+    const client = new LiveSeatsAeroClient("test-key", { baseDelayMs: 1 });
+    await client.search({ origin_airport: "ORD", destination_airport: "NRT" });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("wraps exhausted network-level retries in a SeatsAeroError", async () => {
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new TypeError("fetch failed"));
+
+    const client = new LiveSeatsAeroClient("test-key", {
+      baseDelayMs: 1,
+      maxRetries: 2,
+    });
+
+    await expect(
+      client.search({ origin_airport: "ORD", destination_airport: "NRT" }),
+    ).rejects.toMatchObject({ status: 0 });
+  });
+
+  it("rejects with a SeatsAeroError when refresh() is called with an invalid id count", async () => {
+    const client = new LiveSeatsAeroClient("test-key");
+
+    await expect(client.refresh([])).rejects.toMatchObject({ status: 400 });
+  });
+
   it("omits undefined params from the query string", async () => {
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
