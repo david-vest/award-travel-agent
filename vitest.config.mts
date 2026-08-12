@@ -7,6 +7,6 @@ export default defineConfig({
     include: ["src/**/*.test.ts", "evals/**/*.test.ts"],
   },
   resolve: {
-    alias: { "@": path.resolve(__dirname, "./src") },
+    alias: { "@": path.resolve(import.meta.dirname, "./src") },
   },
 });
