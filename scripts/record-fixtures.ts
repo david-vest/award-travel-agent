@@ -79,23 +79,27 @@ async function recordTripsFromSearches(
   client: LiveSeatsAeroClient,
   manifest: Record<string, unknown>,
 ): Promise<void> {
-  const { readFile, readdir } = await import("node:fs/promises");
-  const files = (await readdir(DEFAULT_FIXTURE_DIR)).filter(
-    (f) => f.endsWith(".json") && f !== "manifest.json",
-  );
+  const { readFile } = await import("node:fs/promises");
 
+  // Only harvest from fixtures THIS run wrote, and only /search responses —
+  // a prior run's /trips/* fixtures share this directory but have a
+  // different shape ({ data: Trip[] }), and their `ID` fields are trip IDs,
+  // not availability IDs. Globbing the whole directory would re-harvest
+  // those on a second `make record` run and burn quota on bogus lookups.
   const ids = new Set<string>();
-  for (const f of files) {
+  for (const [file, entry] of Object.entries(manifest)) {
+    if ((entry as { endpoint?: string })?.endpoint !== "/search") continue;
+
     // A file left over from a previous, possibly-interrupted run could be
     // unreadable or not valid JSON. That must not abort the whole script —
     // it would throw away every fixture already recorded above and skip
     // writing manifest.json entirely. Skip the bad file and keep going.
     let body: unknown;
     try {
-      body = JSON.parse(await readFile(path.join(DEFAULT_FIXTURE_DIR, f), "utf8"));
+      body = JSON.parse(await readFile(path.join(DEFAULT_FIXTURE_DIR, file), "utf8"));
     } catch (err) {
       process.stdout.write(
-        `  skipping unreadable fixture ${f}: ${(err as Error).message}\n`,
+        `  skipping unreadable fixture ${file}: ${(err as Error).message}\n`,
       );
       continue;
     }
