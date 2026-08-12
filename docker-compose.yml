@@ -1,0 +1,11 @@
+services:
+  mongodb:
+    image: mongodb/mongodb-atlas-local:latest
+    container_name: award-travel-mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodata:/data/db
+
+volumes:
+  mongodata:

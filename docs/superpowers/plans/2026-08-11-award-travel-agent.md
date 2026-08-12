@@ -35,7 +35,8 @@ Every task's requirements implicitly include this section.
 - **Mid-conversation `role: "system"` messages are NOT supported on Sonnet 5.** Dynamic context goes into user-turn content.
 - **Pricing:** $3.00 / $15.00 per MTok. Introductory $2.00 / $10.00 **through 2026-08-31**. Cache reads bill at 0.1x base input; cache writes at 1.25x (5m TTL).
 - **seats.aero quota:** 1,000 API calls/day. Refresh additionally capped at 2,000 calls/hour, one daily credit per newly-queued item.
-- **Node effort tiers:** `guard_input`, `triage`, `plan_search`, `plan_discovery`, `verify_groundedness` → `effort: "low"`. `synthesize` → `effort: "medium"`.
+- **Node effort tiers:** `guard_input`, `triage`, `plan_search`, `plan_discovery`, `enrich_trips`, `verify_groundedness` → `effort: "low"`. `synthesize` → `effort: "medium"`.
+- **Exactly one node binds a tool to a model:** `enrich_trips` (Task 4.6), via `get_trip_details` (Task 2.3). Every other tool-shaped operation is called directly by graph node code, not offered to the model — see Task 2.2 and 2.3's design notes for why.
 - **Every commit runs `npm run typecheck && npm test` first.** No commit on a red suite.
 - **Do not commit on the user's behalf beyond the per-task commits specified here.** No `git push`, no PR creation.
 
@@ -73,11 +74,9 @@ src/
 │  ├─ locations/
 │  │  ├─ data.ts              # airport + region tables
 │  │  └─ resolve.ts           # resolveLocation (deterministic, no LLM)
-│  ├─ search-awards.ts
-│  ├─ regional-availability.ts
-│  ├─ trip-details.ts
-│  ├─ program-routes.ts
-│  └─ index.ts                # tool registry
+│  ├─ search-awards.ts        # normalizeResults (no tools — see Task 2.2)
+│  ├─ trip-details.ts         # summarizeTrip + the one real tool: get_trip_details
+│  └─ index.ts                # barrel re-export
 ├─ rag/
 │  ├─ frontmatter.ts          # Zod schema for KB doc frontmatter
 │  ├─ ingest.ts               # markdown → embeddings → Atlas
@@ -2107,29 +2106,28 @@ git commit -m "feat(tools): add deterministic location resolver with curated air
 
 ---
 
-### Task 2.2: Search and regional availability tools
+### Task 2.2: Search result normalization
 
 **Files:**
-- Create: `src/tools/search-awards.ts`, `src/tools/regional-availability.ts`
+- Create: `src/tools/search-awards.ts`
 - Test: `src/tools/search-awards.test.ts`
 
 **Interfaces:**
-- Consumes: `SeatsAeroClient` from `src/tools/seats-aero`, `resolveLocation`/`toAirportParam` from `src/tools/locations/resolve`
+- Consumes: `AvailabilityResult`, `CabinClass` from `src/tools/seats-aero/types`
 - Produces:
-  - `const searchAwardsSchema: z.ZodObject<...>` — reused by the planner as its structured-output target
-  - `function makeSearchAwardsTool(client: SeatsAeroClient)` → LangChain `StructuredTool`
-  - `function makeRegionalAvailabilityTool(client: SeatsAeroClient)`
   - `function normalizeResults(raw: AvailabilityResult[]): AwardOption[]`
   - `type AwardOption` — the flattened per-cabin shape everything downstream uses
 
 **Design note:** the seats.aero availability object packs four cabins into one record (`JAvailable`, `JMileageCost`, …). `normalizeResults` flattens that into one `AwardOption` per available cabin. Every downstream node — synthesis, groundedness, the UI — works on `AwardOption`, never the raw shape.
+
+**Why no tool wrapper here:** search and regional-availability calls are made by graph nodes (`search_awards`, Task 4.6), not by the model deciding to invoke a tool — the discovery probe budget and the refresh-eligibility gate are only enforceable as hard caps in code, and a model holding a bound search tool could call it as many times as it liked. `normalizeResults` is a plain function both `search_awards` and the fixture-recording script call directly. The one place this codebase genuinely hands the model a tool is `get_trip_details` in Task 2.3 — see that task's design note for why that operation, specifically, is safe to delegate.
 
 - [ ] **Step 1: Write the failing test**
 
 ```ts
 // src/tools/search-awards.test.ts
 import { describe, it, expect } from "vitest";
-import { normalizeResults, searchAwardsSchema } from "./search-awards";
+import { normalizeResults } from "./search-awards";
 import type { AvailabilityResult } from "./seats-aero/types";
 
 const record: AvailabilityResult = {
@@ -2196,26 +2194,6 @@ describe("normalizeResults", () => {
     expect(options.some((o) => o.cabin === "business")).toBe(false);
   });
 });
-
-describe("searchAwardsSchema", () => {
-  it("accepts a minimal valid plan", () => {
-    const parsed = searchAwardsSchema.parse({
-      origin: "Chicago",
-      destination: "Tokyo",
-    });
-    expect(parsed.origin).toBe("Chicago");
-  });
-
-  it("rejects an unknown cabin", () => {
-    expect(() =>
-      searchAwardsSchema.parse({
-        origin: "Chicago",
-        destination: "Tokyo",
-        cabins: ["luxury"],
-      }),
-    ).toThrow();
-  });
-});
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -2227,41 +2205,7 @@ Expected: FAIL — cannot resolve `./search-awards`.
 
 ```ts
 // src/tools/search-awards.ts
-import { z } from "zod";
-import { tool } from "@langchain/core/tools";
-import type { SeatsAeroClient } from "./seats-aero";
 import type { AvailabilityResult, CabinClass } from "./seats-aero/types";
-import { resolveLocation, toAirportParam } from "./locations/resolve";
-
-export const searchAwardsSchema = z.object({
-  origin: z
-    .string()
-    .describe('Origin city, airport, or region. e.g. "Chicago", "ORD"'),
-  destination: z
-    .string()
-    .describe('Destination city, airport, or region. e.g. "Tokyo", "Asia"'),
-  startDate: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/)
-    .optional()
-    .describe("Earliest departure date, YYYY-MM-DD"),
-  endDate: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/)
-    .optional()
-    .describe("Latest departure date, YYYY-MM-DD"),
-  cabins: z
-    .array(z.enum(["economy", "premium", "business", "first"]))
-    .optional()
-    .describe("Cabin classes to include. Omit for all."),
-  nonstopOnly: z.boolean().optional().describe("Only direct flights"),
-  programs: z
-    .array(z.string())
-    .optional()
-    .describe('Mileage programs to search, e.g. ["aeroplan","united"]'),
-});
-
-export type SearchAwardsInput = z.infer<typeof searchAwardsSchema>;
 
 /** One bookable option: a single cabin on a single date via a single program. */
 export type AwardOption = {
@@ -2324,127 +2268,26 @@ export function normalizeResults(raw: AvailabilityResult[]): AwardOption[] {
 
   return out;
 }
-
-export function makeSearchAwardsTool(client: SeatsAeroClient) {
-  return tool(
-    async (input: SearchAwardsInput): Promise<string> => {
-      const origin = resolveLocation(input.origin);
-      const destination = resolveLocation(input.destination);
-
-      if (origin.kind === "unknown" || destination.kind === "unknown") {
-        const bad = origin.kind === "unknown" ? input.origin : input.destination;
-        return JSON.stringify({
-          error: `Could not resolve "${bad}" to any airport or region.`,
-          options: [],
-        });
-      }
-
-      const res = await client.search({
-        origin_airport: toAirportParam(origin)!,
-        destination_airport: toAirportParam(destination)!,
-        start_date: input.startDate,
-        end_date: input.endDate,
-        cabins: input.cabins?.join(","),
-        sources: input.programs?.join(","),
-        only_direct_flights: input.nonstopOnly || undefined,
-        take: 500,
-        order_by: "lowest_mileage",
-      });
-
-      return JSON.stringify({
-        options: normalizeResults(res.data),
-        count: res.count,
-        hasMore: res.hasMore,
-      });
-    },
-    {
-      name: "search_award_availability",
-      description:
-        "Search cached award availability between known origins and destinations. " +
-        "Use when the user names both a departure point and a destination (or a " +
-        "destination region). Returns one option per available cabin.",
-      schema: searchAwardsSchema,
-    },
-  );
-}
 ```
 
-- [ ] **Step 4: Write `regional-availability.ts`**
-
-```ts
-// src/tools/regional-availability.ts
-import { z } from "zod";
-import { tool } from "@langchain/core/tools";
-import type { SeatsAeroClient } from "./seats-aero";
-import { REGIONS } from "./seats-aero/types";
-import { normalizeResults } from "./search-awards";
-
-export const regionalAvailabilitySchema = z.object({
-  program: z
-    .string()
-    .describe('A single mileage program, e.g. "aeroplan". One per call.'),
-  originRegion: z.enum(REGIONS as unknown as [string, ...string[]]).optional(),
-  destinationRegion: z
-    .enum(REGIONS as unknown as [string, ...string[]])
-    .optional(),
-  cabin: z.enum(["economy", "premium", "business", "first"]).optional(),
-  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-});
-
-export type RegionalAvailabilityInput = z.infer<
-  typeof regionalAvailabilitySchema
->;
-
-export function makeRegionalAvailabilityTool(client: SeatsAeroClient) {
-  return tool(
-    async (input: RegionalAvailabilityInput): Promise<string> => {
-      const res = await client.regionalAvailability({
-        source: input.program as never,
-        origin_region: input.originRegion as never,
-        destination_region: input.destinationRegion as never,
-        cabin: input.cabin,
-        start_date: input.startDate,
-        end_date: input.endDate,
-        take: 1000,
-      });
-
-      return JSON.stringify({
-        options: normalizeResults(res.data),
-        count: res.count,
-        hasMore: res.hasMore,
-      });
-    },
-    {
-      name: "find_regional_availability",
-      description:
-        "Browse award availability across a whole region for ONE mileage program. " +
-        "Use for open-ended discovery when the user has no specific destination. " +
-        "Each call covers one program — call it several times to compare programs.",
-      schema: regionalAvailabilitySchema,
-    },
-  );
-}
-```
-
-- [ ] **Step 5: Run tests to verify they pass**
+- [ ] **Step 4: Run tests to verify they pass**
 
 Run: `npx vitest run src/tools/search-awards.test.ts`
-Expected: PASS (8 tests).
+Expected: PASS (6 tests).
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add src/tools/search-awards.ts src/tools/regional-availability.ts src/tools/search-awards.test.ts
-git commit -m "feat(tools): add search and regional availability tools with result normalization"
+git add src/tools/search-awards.ts src/tools/search-awards.test.ts
+git commit -m "feat(tools): add award result normalization"
 ```
 
 ---
 
-### Task 2.3: Trip details, program routes, and the tool registry
+### Task 2.3: Trip summarization and the get_trip_details tool
 
 **Files:**
-- Create: `src/tools/trip-details.ts`, `src/tools/program-routes.ts`, `src/tools/index.ts`
+- Create: `src/tools/trip-details.ts`, `src/tools/index.ts`
 - Test: `src/tools/trip-details.test.ts`
 
 **Interfaces:**
@@ -2452,8 +2295,9 @@ git commit -m "feat(tools): add search and regional availability tools with resu
 - Produces:
   - `function summarizeTrip(trip: Trip): TripSummary`
   - `type TripSummary = { flightNumbers: string[]; aircraft: string[]; stops: number; carriers: string[]; departsAt?: string; arrivesAt?: string }`
-  - `function makeTripDetailsTool(client)`, `function makeProgramRoutesTool(client)`
-  - `function buildTools(client: SeatsAeroClient)` — returns all five tools
+  - `function makeGetTripDetailsTool(client: SeatsAeroClient)` — LangChain `StructuredTool`, the one real tool in this codebase, bound to a model in Task 4.6's `enrich_trips`
+
+**Design note — why this is the one tool that's genuinely bound:** every other seats.aero call (Task 2.2) is graph-orchestrated because its call count needs a hard cap enforced in code — a model holding `search_award_availability` could call it without limit. `get_trip_details` is different: by the time it's offered, `enrich_trips` has already deterministically capped the candidate list at `ENRICH_TOP_N` (Task 4.6). Within that fixed, pre-capped list, "which of these five is actually worth the extra lookup" is a real judgment call — and the worst case if the model over-calls is five wasted lookups, not an unbounded bill. That's the shape of decision worth handing to the model: bounded blast radius, genuine judgment. `program-routes.ts` and `resolveLocationTool` from the original design are dropped — `client.routes()` stays in the Phase 1 data layer as a tested, documented capability, but nothing in the graph calls it, and no tool wrapper is built around it or around location resolution (Task 4.4/4.5 call `resolveLocation` directly as a plain function).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -2562,7 +2406,12 @@ export function summarizeTrip(trip: Trip): TripSummary {
   };
 }
 
-export function makeTripDetailsTool(client: SeatsAeroClient) {
+/**
+ * The one tool a model actually calls in this codebase. Safe to delegate
+ * specifically because Task 4.6 only ever offers it against an already
+ * hard-capped candidate list — see this task's design note.
+ */
+export function makeGetTripDetailsTool(client: SeatsAeroClient) {
   return tool(
     async ({ availabilityId }: { availabilityId: string }): Promise<string> => {
       const res = await client.trips(availabilityId);
@@ -2575,8 +2424,9 @@ export function makeTripDetailsTool(client: SeatsAeroClient) {
       name: "get_trip_details",
       description:
         "Fetch flight-level detail (flight numbers, aircraft type, timings) for " +
-        "one availability record. Call this for options you intend to recommend — " +
-        "aircraft type determines which cabin product the traveler actually gets.",
+        "one availability record. Call this for options worth verifying before " +
+        "recommending — aircraft type determines which cabin product the " +
+        "traveler actually gets, and it's cheap to check when it matters.",
       schema: z.object({
         availabilityId: z
           .string()
@@ -2587,112 +2437,28 @@ export function makeTripDetailsTool(client: SeatsAeroClient) {
 }
 ```
 
-- [ ] **Step 4: Write `program-routes.ts`**
-
-```ts
-// src/tools/program-routes.ts
-import { z } from "zod";
-import { tool } from "@langchain/core/tools";
-import type { SeatsAeroClient } from "./seats-aero";
-
-/**
- * The /routes endpoint is not in the public seats.aero docs. It works, and
- * aero-connections relies on it, but nothing here is allowed to depend on it —
- * a failure returns an empty list rather than breaking the turn.
- */
-export function makeProgramRoutesTool(client: SeatsAeroClient) {
-  return tool(
-    async ({ program, origin }: { program: string; origin?: string }) => {
-      try {
-        const routes = await client.routes(program);
-        const filtered = origin
-          ? routes.filter((r) => r.OriginAirport === origin.toUpperCase())
-          : routes;
-        return JSON.stringify({
-          routes: filtered.slice(0, 200).map((r) => ({
-            origin: r.OriginAirport,
-            destination: r.DestinationAirport,
-            distance: r.Distance,
-          })),
-        });
-      } catch {
-        // Undocumented endpoint — degrade instead of failing the turn.
-        return JSON.stringify({
-          routes: [],
-          note: "Route graph unavailable; rely on availability search instead.",
-        });
-      }
-    },
-    {
-      name: "list_program_routes",
-      description:
-        "List routes a mileage program flies, optionally filtered by origin. " +
-        "Best-effort: may return an empty list, in which case use availability " +
-        "search instead. Useful for narrowing discovery candidates.",
-      schema: z.object({
-        program: z.string().describe('Mileage program, e.g. "aeroplan"'),
-        origin: z.string().optional().describe("Filter to this origin IATA"),
-      }),
-    },
-  );
-}
-```
-
-- [ ] **Step 5: Write `index.ts` (registry) with the location tool inline**
+- [ ] **Step 4: Write `index.ts`**
 
 ```ts
 // src/tools/index.ts
-import { z } from "zod";
-import { tool } from "@langchain/core/tools";
-import type { SeatsAeroClient } from "./seats-aero";
-import { resolveLocation } from "./locations/resolve";
-import { makeSearchAwardsTool } from "./search-awards";
-import { makeRegionalAvailabilityTool } from "./regional-availability";
-import { makeTripDetailsTool } from "./trip-details";
-import { makeProgramRoutesTool } from "./program-routes";
-
-export const resolveLocationTool = tool(
-  async ({ query }: { query: string }) => JSON.stringify(resolveLocation(query)),
-  {
-    name: "resolve_location",
-    description:
-      "Turn a place name into airport codes or a region. Always use this " +
-      "instead of writing IATA codes from memory — it will say 'unknown' " +
-      "rather than guess, which is the correct behavior for an unrecognized place.",
-    schema: z.object({
-      query: z.string().describe('A city, airport code, or region name'),
-    }),
-  },
-);
-
-/**
- * Every tool the model may call. Refresh is deliberately absent: it spends
- * daily quota, so the graph decides when to call it (see the refresh node).
- */
-export function buildTools(client: SeatsAeroClient) {
-  return [
-    makeSearchAwardsTool(client),
-    makeRegionalAvailabilityTool(client),
-    makeTripDetailsTool(client),
-    makeProgramRoutesTool(client),
-    resolveLocationTool,
-  ];
-}
-
-export { normalizeResults, type AwardOption, searchAwardsSchema } from "./search-awards";
-export { summarizeTrip, type TripSummary } from "./trip-details";
+export { normalizeResults, type AwardOption } from "./search-awards";
+export {
+  summarizeTrip,
+  type TripSummary,
+  makeGetTripDetailsTool,
+} from "./trip-details";
 ```
 
-- [ ] **Step 6: Run tests and typecheck**
+- [ ] **Step 5: Run tests and typecheck**
 
 Run: `npm run typecheck && npm test`
 Expected: all green.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add src/tools/trip-details.ts src/tools/program-routes.ts src/tools/index.ts src/tools/trip-details.test.ts
-git commit -m "feat(tools): add trip details, program routes, and tool registry"
+git add src/tools/trip-details.ts src/tools/index.ts src/tools/trip-details.test.ts
+git commit -m "feat(tools): add trip summarization and the get_trip_details tool"
 ```
 
 ---
@@ -4607,19 +4373,21 @@ git commit -m "feat(agent): add discovery planner with hard-capped probe budget"
 ### Task 4.6: Search and enrich nodes
 
 **Files:**
-- Create: `src/agent/nodes/search.ts`, `src/agent/nodes/enrich.ts`
-- Test: `src/agent/nodes/search.test.ts`
+- Create: `src/agent/nodes/search.ts`, `src/agent/nodes/enrich.ts`, `src/agent/prompts/enrich.ts`
+- Test: `src/agent/nodes/search.test.ts`, `src/agent/nodes/enrich.test.ts`
 
 **Interfaces:**
-- Consumes: `createSeatsAeroClient`, `withResponseCache`, `normalizeResults`, `summarizeTrip`, `probesFromPlan`
+- Consumes: `createSeatsAeroClient`, `withResponseCache`, `normalizeResults`, `summarizeTrip`, `makeGetTripDetailsTool`, `probesFromPlan`, `chat`, `plainSystem`
 - Produces:
   - `const ENRICH_TOP_N = 5`
   - `function rankOptions(options: AwardOption[]): AwardOption[]`
   - `async function searchAwards(state): Promise<Partial<AgentStateType>>`
-  - `async function enrichTrips(state): Promise<Partial<AgentStateType>>`
   - `function getClient(): SeatsAeroClient` — memoized, cache-wrapped
+  - `function describeCandidates(options: AwardOption[]): string`
+  - `function idsFromToolCalls(toolCalls: ToolCallLike[]): string[]`
+  - `async function enrichTrips(state): Promise<Partial<AgentStateType>>`
 
-**Design note:** these nodes make no model calls. They execute the plan the planner produced. That is deliberate — the model decided *what* to look for; running the search is mechanical, and keeping it mechanical means it is cheap, deterministic, and trivially testable.
+**Design note:** `search_awards` makes no model calls — it executes the plan the planner already produced, mechanically, which is what keeps it cheap, deterministic, and trivially testable. `enrich_trips` is different, and deliberately so: it's where this codebase's one real tool call lives (see Task 2.3's design note). The candidate list is hard-capped at `ENRICH_TOP_N` *before* the model ever sees it, so the model's only decision is which of those five, if any, are worth the extra lookup — a judgment call with a bounded worst case, unlike the search calls above it.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -4794,18 +4562,177 @@ export async function searchAwards(
 }
 ```
 
-- [ ] **Step 4: Write `enrich.ts`**
+- [ ] **Step 4: Write the enrich prompt**
+
+```ts
+// src/agent/prompts/enrich.ts
+
+/**
+ * Short and un-cached on purpose (well under the 1024-token cache minimum) —
+ * this is a routine per-turn decision, not a stable instruction set worth a
+ * cache breakpoint.
+ */
+export const ENRICH_PROMPT = `You decide which award options are worth checking for exact flight detail before they're shown to the traveler.
+
+You have access to get_trip_details, which returns flight numbers, aircraft type, and stop count for one option. Each call costs one lookup against a limited daily quota, so use it deliberately rather than on everything.
+
+Call it when the extra detail would change what gets recommended:
+- the option looks unusually good and is worth verifying before it's featured
+- two or more options are close in price, where aircraft type would break the tie
+- the cabin is business or first, where aircraft type meaningfully changes the experience (a modern suite vs. an older 2-2-2 layout at the same price)
+
+Skip it when an option clearly is not going to be recommended regardless of aircraft, or when detail on the top pick alone is already enough to answer the question. You do not need to check every option. Calling the tool on none of them is a correct answer when nothing here warrants it.`;
+```
+
+- [ ] **Step 5: Write the failing test**
+
+```ts
+// src/agent/nodes/enrich.test.ts
+import { describe, it, expect } from "vitest";
+import { describeCandidates, idsFromToolCalls } from "./enrich";
+import type { AwardOption } from "../../tools";
+
+const opt = (over: Partial<AwardOption> = {}): AwardOption => ({
+  availabilityId: "a1",
+  origin: "ORD",
+  destination: "NRT",
+  date: "2026-09-14",
+  program: "aeroplan",
+  cabin: "business",
+  miles: 87500,
+  direct: true,
+  airlines: "NH",
+  ...over,
+});
+
+describe("idsFromToolCalls", () => {
+  it("extracts availabilityId from a get_trip_details call", () => {
+    const ids = idsFromToolCalls([
+      { name: "get_trip_details", args: { availabilityId: "a1" } },
+    ]);
+    expect(ids).toEqual(["a1"]);
+  });
+
+  it("dedupes repeated calls to the same id", () => {
+    const ids = idsFromToolCalls([
+      { name: "get_trip_details", args: { availabilityId: "a1" } },
+      { name: "get_trip_details", args: { availabilityId: "a1" } },
+    ]);
+    expect(ids).toEqual(["a1"]);
+  });
+
+  it("ignores calls to a different tool", () => {
+    const ids = idsFromToolCalls([
+      { name: "some_other_tool", args: { availabilityId: "a1" } },
+    ]);
+    expect(ids).toEqual([]);
+  });
+
+  it("ignores a call with a missing or malformed id", () => {
+    const ids = idsFromToolCalls([
+      { name: "get_trip_details", args: {} },
+      { name: "get_trip_details", args: { availabilityId: 42 } },
+    ]);
+    expect(ids).toEqual([]);
+  });
+
+  it("returns an empty list when the model called nothing", () => {
+    expect(idsFromToolCalls([])).toEqual([]);
+  });
+});
+
+describe("describeCandidates", () => {
+  it("lists each option with its id, route, and price", () => {
+    const text = describeCandidates([opt()]);
+    expect(text).toContain("id=a1");
+    expect(text).toContain("ORD-NRT");
+    expect(text).toContain("87500");
+  });
+
+  it("never leaks flight numbers or aircraft — that's what the tool call is for", () => {
+    const text = describeCandidates([opt()]);
+    expect(text).not.toMatch(/NH\d/);
+    expect(text.toLowerCase()).not.toContain("aircraft");
+  });
+
+  it("numbers options so the model can reference them unambiguously", () => {
+    const text = describeCandidates([
+      opt({ availabilityId: "a1" }),
+      opt({ availabilityId: "a2" }),
+    ]);
+    expect(text).toMatch(/^1\./m);
+    expect(text).toMatch(/^2\./m);
+  });
+});
+```
+
+- [ ] **Step 6: Run test to verify it fails**
+
+Run: `npx vitest run src/agent/nodes/enrich.test.ts`
+Expected: FAIL — cannot resolve `./enrich`.
+
+- [ ] **Step 7: Verify the bound tool's `.invoke()` return shape**
+
+`enrich.ts` calls `boundTool.invoke({ availabilityId })` with plain arguments — not a full `{name, args, id}` tool-call object — and expects the tool function's own return value (the JSON string `makeGetTripDetailsTool` returns) back directly, not wrapped in a `ToolMessage`. Confirm this against the installed `@langchain/core` before writing Step 8:
+
+```bash
+npx tsx -e "
+import { tool } from '@langchain/core/tools';
+import { z } from 'zod';
+const t = tool(async ({ x }: { x: string }) => JSON.stringify({ got: x }), {
+  name: 'probe', description: 'probe', schema: z.object({ x: z.string() }),
+});
+const result = await t.invoke({ x: 'hello' });
+console.log(typeof result, result);
+process.exit(0);
+"
+```
+
+Expected: `string {"got":"hello"}`. If you instead get an object back (a `ToolMessage`), adjust Step 8 to read `.content` before `JSON.parse`-ing it.
+
+- [ ] **Step 8: Write `enrich.ts`**
 
 ```ts
 // src/agent/nodes/enrich.ts
-import { summarizeTrip, type TripSummary } from "../../tools";
+import { makeGetTripDetailsTool, type AwardOption, type TripSummary } from "../../tools";
+import { chat } from "../models";
+import { plainSystem } from "../cache";
+import { ENRICH_PROMPT } from "../prompts/enrich";
 import type { AgentStateType } from "../state";
 import { ENRICH_TOP_N, getClient } from "./search";
 
+export type ToolCallLike = { name: string; args: Record<string, unknown> };
+
+/** Deduped availabilityIds the model actually asked to look up. */
+export function idsFromToolCalls(toolCalls: ToolCallLike[]): string[] {
+  const ids = toolCalls
+    .filter((c) => c.name === "get_trip_details")
+    .map((c) => c.args.availabilityId)
+    .filter((id): id is string => typeof id === "string" && id.length > 0);
+  return [...new Set(ids)];
+}
+
 /**
- * Fetches flight-level detail for the handful of options that might actually
- * be recommended. Capped because each is an API call against a daily quota,
- * and because aircraft type only matters for options a user will see.
+ * Deliberately excludes flight numbers and aircraft — that is exactly what
+ * get_trip_details exists to fetch. Showing it here would remove the reason
+ * to call the tool at all.
+ */
+export function describeCandidates(options: AwardOption[]): string {
+  return options
+    .map(
+      (o, i) =>
+        `${i + 1}. id=${o.availabilityId} ${o.origin}-${o.destination} ` +
+        `${o.date} program=${o.program} cabin=${o.cabin} miles=${o.miles} ` +
+        `nonstop=${o.direct}`,
+    )
+    .join("\n");
+}
+
+/**
+ * The one node in this graph where the model genuinely decides whether to
+ * call a tool. Safe here because the candidate list is capped at
+ * ENRICH_TOP_N before the model ever sees it — the worst case is a handful of
+ * wasted lookups, not an unbounded bill.
  */
 export async function enrichTrips(
   state: AgentStateType,
@@ -4814,14 +4741,26 @@ export async function enrichTrips(
   if (top.length === 0) return { tripSummaries: [] };
 
   const client = await getClient();
+  const tripsTool = makeGetTripDetailsTool(client);
+  const model = chat({ effort: "low" }).bindTools([tripsTool]);
+
+  const response = await model.invoke([
+    plainSystem(ENRICH_PROMPT),
+    { role: "user", content: describeCandidates(top) },
+  ]);
+
+  const ids = idsFromToolCalls(response.tool_calls ?? []);
+  if (ids.length === 0) return { tripSummaries: [] };
+
   const summaries: TripSummary[] = [];
 
-  // Sequential rather than parallel: a burst of five is a fast way to trip the
-  // rate limiter, and the latency difference is not user-visible here.
-  for (const option of top) {
+  // Sequential rather than parallel: a burst of up to five is a fast way to
+  // trip the rate limiter, and the latency difference is not user-visible.
+  for (const id of ids) {
     try {
-      const res = await client.trips(option.availabilityId);
-      summaries.push(...res.data.map(summarizeTrip));
+      const raw = await tripsTool.invoke({ availabilityId: id });
+      const parsed = JSON.parse(raw) as { trips?: TripSummary[] };
+      summaries.push(...(parsed.trips ?? []));
     } catch {
       continue; // enrichment is additive; its absence must not fail the turn
     }
@@ -4831,16 +4770,49 @@ export async function enrichTrips(
 }
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [ ] **Step 9: Run tests to verify they pass**
 
-Run: `npx vitest run src/agent/nodes/search.test.ts`
-Expected: PASS (6 tests).
+Run: `npx vitest run src/agent/nodes/search.test.ts src/agent/nodes/enrich.test.ts`
+Expected: PASS (6 + 8 tests).
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 10: Smoke-test the real agentic behavior**
+
+Verify the model actually exercises judgment rather than always (or never) calling the tool — run it against two different candidate sets:
 
 ```bash
-git add src/agent/nodes/search.ts src/agent/nodes/enrich.ts src/agent/nodes/search.test.ts
-git commit -m "feat(agent): add search and enrich nodes with ranking and caps"
+npx tsx -e "
+import 'dotenv/config';
+import { enrichTrips } from './src/agent/nodes/enrich';
+
+const clearWinner = {
+  awardResults: [
+    { availabilityId: 'a1', origin:'ORD', destination:'NRT', date:'2026-09-14',
+      program:'aeroplan', cabin:'economy', miles:15000, direct:false, airlines:'UA' },
+  ],
+} as never;
+
+const closeCall = {
+  awardResults: [
+    { availabilityId: 'b1', origin:'ORD', destination:'NRT', date:'2026-09-14',
+      program:'aeroplan', cabin:'business', miles:87500, direct:true, airlines:'NH' },
+    { availabilityId: 'b2', origin:'ORD', destination:'NRT', date:'2026-09-14',
+      program:'united', cabin:'business', miles:88000, direct:true, airlines:'NH' },
+  ],
+} as never;
+
+console.log('clear economy pick:', JSON.stringify(await enrichTrips(clearWinner)));
+console.log('close business call:', JSON.stringify(await enrichTrips(closeCall)));
+process.exit(0);
+"
+```
+
+Expected: the model calls `get_trip_details` rarely or not at all on the clear economy pick (nothing to disambiguate), and is more likely to call it on the close business comparison (aircraft type could break the tie) — requires fixtures for `a1`, `b1`, `b2` from `make record`, or run this after Task 1.5 with real fixtures present. The exact call pattern isn't deterministic; the point is confirming both paths are reachable, not pinning an exact outcome.
+
+- [ ] **Step 11: Commit**
+
+```bash
+git add src/agent/nodes/search.ts src/agent/nodes/enrich.ts src/agent/prompts/enrich.ts src/agent/nodes/search.test.ts src/agent/nodes/enrich.test.ts
+git commit -m "feat(agent): add search node and agentic enrich node with bounded tool use"
 ```
 
 ---
@@ -7722,7 +7694,7 @@ Checked against `docs/superpowers/specs/2026-08-11-award-travel-agent-design.md`
 |---|---|
 | Graph (nodes, edges, three decisions) | 4.1, 4.3–4.8, 5.1–5.3 |
 | Budgets and thresholds | 4.5 (discovery), 4.6 (enrich), 5.1 (refresh + poll), 5.3 (revisions), 1.4 (cache TTL) |
-| Tools (all five) | 2.1–2.3 |
+| Data operations (search, regional availability, trip detail, location resolution) | 2.1–2.3 |
 | Data layer (live/replay/factory/cache/record) | 1.1–1.5 |
 | Knowledge base and RAG | 3.1–3.3 |
 | Guardrails (input + groundedness) | 4.3, 5.2 |
@@ -7733,13 +7705,15 @@ Checked against `docs/superpowers/specs/2026-08-11-award-travel-agent-design.md`
 | Interface + AeroConnections deep links | 6.1–6.3 |
 | Project structure | file map above; created across all phases |
 
-**Two spec items deliberately changed, both flagged where they occur:**
+**Three spec items deliberately changed, all flagged where they occur and confirmed with the user before implementation began:**
 
 1. **Tool definitions are not cached.** The spec listed them as "cached with system, for free." Caching tool definitions in `@langchain/anthropic` requires binding tools in Anthropic's raw format, which forfeits Zod-derived schemas. Zod's type safety is worth more than the handful of tokens tool definitions cost, so Task 2.3 keeps Zod and only the two long system prompts are cached.
 
 2. **The Phase 3 open item is resolved.** `cache_control` goes on a content block inside a system message (`{ type: "text", text, cache_control: { type: "ephemeral" } }`), and usage lands on `response_metadata.usage`. Task 4.2 implements this, and `cachedSystem` throws rather than silently no-op'ing when a prompt is under the 1024-token minimum.
 
-**Type consistency** — `AwardOption` (2.2) is the shape consumed by 3.3, 4.6, 5.1, 5.2, 6.1, 6.2. `TripSummary` (2.3) is consumed by 4.7 and 5.2. `RetrievedDoc` (3.3) by 4.7. `SearchPlan` (4.1) is produced by both planners and consumed by 4.6 and 5.1. `Violation` (4.1) is produced by 5.2 and consumed by 4.7 and 5.3. `getClient` is defined once in 4.6 and reused by 4.6, 5.1, 6.2, 7.1.
+3. **Four of the original five LangChain tools were never actually invoked by the graph.** The spec's "five tools" framing (Section 2) assumed agentic tool-calling, but the graph design (Section 1) is deterministic — nodes call the seats.aero client and `resolveLocation` directly, never via `.bindTools()`. Building `tool()` wrappers nothing invokes is dead code and, separately, Task 2.2's promise that `searchAwardsSchema` would be "reused by the planner" was broken by Task 4.4 defining its own `searchPlanSchema`. Resolved by dropping the wrapping for search, regional availability, program routes, and location resolution (Tasks 2.2–2.3 now export plain functions). One tool is kept and genuinely bound: `get_trip_details` in the redesigned `enrich_trips` (Task 4.6) — the model decides which of an already-capped, pre-budgeted candidate list is worth an extra lookup, which is both a safe place to delegate (bounded worst case: a few wasted calls, not an unbounded bill) and satisfies the take-home's "at least one tool" must-have with a real `.bindTools()` round trip rather than only a design-notes explanation.
+
+**Type consistency** — `AwardOption` (2.2) is the shape consumed by 3.3, 4.6, 5.1, 5.2, 6.1, 6.2. `TripSummary` (2.3) is consumed by 4.6, 4.7, and 5.2. `RetrievedDoc` (3.3) by 4.7. `SearchPlan` (4.1) is produced by both planners and consumed by 4.6 and 5.1. `Violation` (4.1) is produced by 5.2 and consumed by 4.7 and 5.3. `getClient` is defined once in 4.6 and reused by 4.6, 5.1, 6.2, 7.1. `makeGetTripDetailsTool` (2.3) is consumed only by 4.6.
 
 **One signature change is called out explicitly:** Task 7.3 adds an optional `now` parameter to `planSearch`. It is defaulted, so the Task 4.8 graph wiring is unaffected.
 
