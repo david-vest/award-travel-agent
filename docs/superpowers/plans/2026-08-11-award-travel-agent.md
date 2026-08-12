@@ -1247,7 +1247,7 @@ git commit -m "feat(seats-aero): add client interface and live HTTP implementati
 - Produces:
   - `class ReplaySeatsAeroClient implements SeatsAeroClient` — constructor takes a fixture directory
   - `function createSeatsAeroClient(): SeatsAeroClient` — env-driven selection
-  - `function fixturePath(endpoint: string, params: Record<string, unknown>): string`
+  - `function fixtureFile(endpoint: string, params: Record<string, unknown>): string`
 
 - [ ] **Step 1: Write the failing test**
 
