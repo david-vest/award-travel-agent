@@ -163,3 +163,34 @@ describe("UsageTracker callback wiring (handleChatModelStart/handleLLMEnd/handle
     expect(t.pendingRuns).toBe(0);
   });
 });
+
+describe("UsageTracker.reset()", () => {
+  it("clears all accumulated usage and pending runs", () => {
+    const t = new UsageTracker();
+
+    t.record("synthesize", {
+      inputTokens: 100,
+      outputTokens: 50,
+      cacheCreationInputTokens: 25,
+      cacheReadInputTokens: 900,
+    });
+    t.record("triage", {
+      inputTokens: 50,
+      outputTokens: 10,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0,
+    });
+
+    expect(t.perNode.size).toBe(2);
+    expect(t.total().inputTokens).toBe(150);
+
+    t.reset();
+
+    expect(t.perNode.size).toBe(0);
+    const empty = t.total();
+    expect(empty.inputTokens).toBe(0);
+    expect(empty.outputTokens).toBe(0);
+    expect(empty.cacheCreationInputTokens).toBe(0);
+    expect(empty.cacheReadInputTokens).toBe(0);
+  });
+});
