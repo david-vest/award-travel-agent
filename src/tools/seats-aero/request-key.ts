@@ -18,6 +18,9 @@ export function requestKey(
     .filter(([k, v]) => {
       if (v === undefined || v === null || v === "") return false;
       if (k === "cursor" && v === 0) return false;
+      // Assumes every boolean param's omitted default is false — currently
+      // true only for only_direct_flights. Revisit if a boolean param is
+      // ever added whose default is true.
       if (v === false) return false;
       return true;
     })

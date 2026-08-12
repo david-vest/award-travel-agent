@@ -81,14 +81,17 @@ async function recordTripsFromSearches(
 ): Promise<void> {
   const { readFile } = await import("node:fs/promises");
 
-  // Only harvest from fixtures THIS run wrote, and only /search responses —
-  // a prior run's /trips/* fixtures share this directory but have a
-  // different shape ({ data: Trip[] }), and their `ID` fields are trip IDs,
-  // not availability IDs. Globbing the whole directory would re-harvest
-  // those on a second `make record` run and burn quota on bogus lookups.
+  // Only harvest from fixtures THIS run wrote, and only search-shaped
+  // responses (/search and /availability both return { data: AvailabilityResult[] }
+  // with genuine availability IDs in data[].ID) — a prior run's /trips/*
+  // fixtures share this directory but have a different shape ({ data: Trip[] }),
+  // and their `ID` fields are trip IDs, not availability IDs. Globbing the
+  // whole directory would re-harvest those on a second `make record` run and
+  // burn quota on bogus lookups.
   const ids = new Set<string>();
   for (const [file, entry] of Object.entries(manifest)) {
-    if ((entry as { endpoint?: string })?.endpoint !== "/search") continue;
+    const endpoint = (entry as { endpoint?: string })?.endpoint;
+    if (endpoint !== "/search" && endpoint !== "/availability") continue;
 
     // A file left over from a previous, possibly-interrupted run could be
     // unreadable or not valid JSON. That must not abort the whole script —

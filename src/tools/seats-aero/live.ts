@@ -58,6 +58,9 @@ export class LiveSeatsAeroClient implements SeatsAeroClient {
   private get<T>(path: string, params: Record<string, unknown>): Promise<T> {
     const qs = new URLSearchParams();
     for (const [k, v] of Object.entries(params)) {
+      // Assumes every boolean param's omitted default is false — currently
+      // true only for only_direct_flights. Revisit if a boolean param is
+      // ever added whose default is true.
       if (v === undefined || v === null || v === "" || v === false) continue;
       qs.append(k, String(v));
     }
