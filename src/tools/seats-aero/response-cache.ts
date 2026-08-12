@@ -1,5 +1,6 @@
 import type { Db } from "mongodb";
 import type { SeatsAeroClient } from "./client";
+import { currentMode } from "./index";
 import { requestKey } from "./request-key";
 import type {
   RegionalParams,
@@ -55,7 +56,7 @@ export function withResponseCache(
     params: Record<string, unknown>,
     call: () => Promise<T>,
   ): Promise<T> {
-    const key = requestKey(endpoint, params);
+    const key = `${currentMode()}:${requestKey(endpoint, params)}`;
     const hit = await store.get(key);
     if (hit !== undefined) return hit as T;
     const fresh = await call();
