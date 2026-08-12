@@ -1466,7 +1466,7 @@ git commit -m "feat(seats-aero): add replay client and env-driven client factory
 
 **Interfaces:**
 - Consumes: `SeatsAeroClient` from `./client`, `requestKey` from `./request-key`
-- Produces: `function withResponseCache(inner: SeatsAeroClient, store: CacheStore): SeatsAeroClient`, `interface CacheStore { get, set }`, `function mongoCacheStore(db: Db): CacheStore`
+- Produces: `function withResponseCache(inner: SeatsAeroClient, store: CacheStore): SeatsAeroClient`, `interface CacheStore { get, set }`, `async function mongoCacheStore(db: Db): Promise<CacheStore>`
 
 **Design note:** the cache is a decorator over the client interface, not a change to either implementation. That keeps caching testable with an in-memory store and means neither `live.ts` nor `replay.ts` grows a second responsibility. `refresh` deliberately bypasses the cache — its whole purpose is to defeat staleness.
 
