@@ -1,4 +1,4 @@
-import { SeatsAeroError, type SeatsAeroClient } from "./client";
+import { SeatsAeroError, validateRefreshIds, type SeatsAeroClient } from "./client";
 import type {
   QuotaState,
   RefreshResponse,
@@ -47,12 +47,7 @@ export class LiveSeatsAeroClient implements SeatsAeroClient {
   }
 
   async refresh(availabilityIds: string[]): Promise<RefreshResponse> {
-    if (availabilityIds.length === 0 || availabilityIds.length > 250) {
-      throw new SeatsAeroError(
-        400,
-        `refresh accepts 1-250 ids, got ${availabilityIds.length}`,
-      );
-    }
+    validateRefreshIds(availabilityIds);
     return this.request<RefreshResponse>("/refresh", {
       method: "POST",
       body: JSON.stringify({ availability_ids: availabilityIds }),

@@ -10,12 +10,23 @@ import type {
 } from "./types";
 
 export class SeatsAeroError extends Error {
+  public code?: string;
+
   constructor(
     public status: number,
     message: string,
+    options?: { code?: string },
   ) {
     super(message);
     this.name = "SeatsAeroError";
+    this.code = options?.code;
+  }
+}
+
+/** Shared by live and replay so both enforce the same 1-250 batch limit. */
+export function validateRefreshIds(ids: string[]): void {
+  if (ids.length === 0 || ids.length > 250) {
+    throw new SeatsAeroError(400, `refresh accepts 1-250 ids, got ${ids.length}`);
   }
 }
 

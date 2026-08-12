@@ -42,7 +42,18 @@ describe("ReplaySeatsAeroClient", () => {
     const client = new ReplaySeatsAeroClient(dir);
     await expect(
       client.search({ origin_airport: "SFO", destination_airport: "LHR" }),
-    ).rejects.toMatchObject({ status: 404 });
+    ).rejects.toMatchObject({ status: 404, code: "FIXTURE_MISSING" });
+  });
+
+  it("distinguishes a corrupt fixture from a missing one", async () => {
+    const client = new ReplaySeatsAeroClient(dir);
+    const corruptParams = { origin_airport: "JFK", destination_airport: "CDG" };
+    const key = requestKey("/search", corruptParams);
+    await writeFile(path.join(dir, `${key}.json`), "{not valid json");
+
+    const err = await client.search(corruptParams).catch((e) => e);
+    expect(err).toMatchObject({ status: 404, code: "FIXTURE_CORRUPT" });
+    expect(err.message).not.toContain("make record");
   });
 
   it("reports a synthetic full quota so UI code has something to render", () => {
@@ -55,5 +66,17 @@ describe("ReplaySeatsAeroClient", () => {
     const res = await client.refresh(["a", "b"]);
     expect(res.complete).toBe(true);
     expect(res.items.every((i) => i.status === "fresh")).toBe(true);
+  });
+
+  it("rejects refresh with too few ids", async () => {
+    const client = new ReplaySeatsAeroClient(dir);
+    await expect(client.refresh([])).rejects.toMatchObject({ status: 400 });
+  });
+
+  it("rejects refresh with too many ids", async () => {
+    const client = new ReplaySeatsAeroClient(dir);
+    await expect(client.refresh(Array(251).fill("x"))).rejects.toMatchObject({
+      status: 400,
+    });
   });
 });

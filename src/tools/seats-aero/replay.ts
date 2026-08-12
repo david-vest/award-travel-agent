@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { SeatsAeroError, type SeatsAeroClient } from "./client";
+import { SeatsAeroError, validateRefreshIds, type SeatsAeroClient } from "./client";
 import { requestKey } from "./request-key";
 import type {
   QuotaState,
@@ -59,6 +59,7 @@ export class ReplaySeatsAeroClient implements SeatsAeroClient {
    * is already current — and `fresh` items cost no quota there either.
    */
   async refresh(availabilityIds: string[]): Promise<RefreshResponse> {
+    validateRefreshIds(availabilityIds);
     return {
       complete: true,
       items: availabilityIds.map((id) => ({ id, status: "fresh" as const })),
@@ -73,14 +74,28 @@ export class ReplaySeatsAeroClient implements SeatsAeroClient {
     params: Record<string, unknown>,
   ): Promise<T> {
     const file = path.join(this.dir, fixtureFile(endpoint, params));
+
+    let raw: string;
     try {
-      return JSON.parse(await readFile(file, "utf8")) as T;
+      raw = await readFile(file, "utf8");
     } catch {
       throw new SeatsAeroError(
         404,
         `No fixture for ${endpoint} ${JSON.stringify(params)}.\n` +
           `Expected: ${file}\n` +
           `Run \`make record\` with SEATS_AERO_API_KEY set to capture it.`,
+        { code: "FIXTURE_MISSING" },
+      );
+    }
+
+    try {
+      return JSON.parse(raw) as T;
+    } catch (err) {
+      throw new SeatsAeroError(
+        404,
+        `Corrupt fixture at ${file}: ${(err as Error).message}. ` +
+          `Delete it and re-record the fixture.`,
+        { code: "FIXTURE_CORRUPT" },
       );
     }
   }

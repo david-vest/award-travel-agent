@@ -112,4 +112,11 @@ describe("LiveSeatsAeroClient", () => {
     const [url] = fetchSpy.mock.calls[0];
     expect(String(url)).not.toContain("cursor");
   });
+
+  it("rejects refresh() with too many ids", async () => {
+    const client = new LiveSeatsAeroClient("test-key");
+    await expect(client.refresh(Array(251).fill("x"))).rejects.toMatchObject({
+      status: 400,
+    });
+  });
 });
