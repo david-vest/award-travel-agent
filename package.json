@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "seed": "tsx src/rag/ingest.ts",
     "record": "tsx scripts/record-fixtures.ts",
-    "eval": "tsx evals/run.ts"
+    "eval": "tsx evals/run.ts",
+    "prepare": "husky"
   },
   "dependencies": {
     "@langchain/anthropic": "^1.5.4",
@@ -37,6 +38,7 @@
     "dotenv": "^17.4.2",
     "eslint": "^9",
     "eslint-config-next": "16.3.0",
+    "husky": "^9.1.7",
     "tsx": "^4.23.12",
     "typescript": "^5",
     "vitest": "^4.1.10"
