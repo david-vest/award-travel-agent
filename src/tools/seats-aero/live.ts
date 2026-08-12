@@ -58,7 +58,7 @@ export class LiveSeatsAeroClient implements SeatsAeroClient {
   private get<T>(path: string, params: Record<string, unknown>): Promise<T> {
     const qs = new URLSearchParams();
     for (const [k, v] of Object.entries(params)) {
-      if (v === undefined || v === null || v === "") continue;
+      if (v === undefined || v === null || v === "" || v === false) continue;
       qs.append(k, String(v));
     }
     const suffix = qs.toString() ? `?${qs}` : "";

@@ -119,4 +119,20 @@ describe("LiveSeatsAeroClient", () => {
       status: 400,
     });
   });
+
+  it("omits an explicit false param from the query string instead of sending it as a literal", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(okResponse({ data: [], count: 0, hasMore: false, cursor: 0 }));
+
+    const client = new LiveSeatsAeroClient("test-key");
+    await client.search({
+      origin_airport: "ORD",
+      destination_airport: "NRT",
+      only_direct_flights: false,
+    });
+
+    const [url] = fetchSpy.mock.calls[0];
+    expect(String(url)).not.toContain("only_direct_flights");
+  });
 });

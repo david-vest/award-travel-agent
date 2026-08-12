@@ -31,4 +31,14 @@ describe("requestKey", () => {
     const b = requestKey("/search", { origin_airport: "MDW,ORD" });
     expect(a).toBe(b);
   });
+
+  it("treats an explicit cursor: 0 as equivalent to omitting cursor", () => {
+    expect(requestKey("/search", { cursor: 0 })).toBe(requestKey("/search", {}));
+  });
+
+  it("treats an explicit only_direct_flights: false as equivalent to omitting it", () => {
+    expect(requestKey("/search", { only_direct_flights: false })).toBe(
+      requestKey("/search", {}),
+    );
+  });
 });

@@ -15,7 +15,12 @@ export function requestKey(
   params: Record<string, unknown>,
 ): string {
   const normalized = Object.entries(params)
-    .filter(([, v]) => v !== undefined && v !== null && v !== "")
+    .filter(([k, v]) => {
+      if (v === undefined || v === null || v === "") return false;
+      if (k === "cursor" && v === 0) return false;
+      if (v === false) return false;
+      return true;
+    })
     .map(([k, v]) => [k, normalizeValue(v)] as const)
     .sort(([a], [b]) => a.localeCompare(b));
 
