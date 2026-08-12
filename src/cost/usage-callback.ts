@@ -67,6 +67,12 @@ export class UsageTracker extends BaseCallbackHandler {
     return this.runIdToNode.size;
   }
 
+  /** Clear all accumulated usage and pending runs. For reusing tracker instances. */
+  reset(): void {
+    this.perNode.clear();
+    this.runIdToNode.clear();
+  }
+
   /** Directly record usage against a node. Public so tests need no LLM. */
   record(node: string, usage: TokenUsage): void {
     const prev = this.perNode.get(node) ?? emptyUsage();
