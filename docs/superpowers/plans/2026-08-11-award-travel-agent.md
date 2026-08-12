@@ -113,7 +113,7 @@ scripts/record-fixtures.ts
 ### Task 0.1: Scaffold project and pin the API surface
 
 **Files:**
-- Create: `package.json`, `tsconfig.json`, `vitest.config.ts`, `.env.example`, `.gitignore`, `docker-compose.yml`, `Makefile`
+- Create: `package.json`, `tsconfig.json`, `vitest.config.mts`, `.env.example`, `.gitignore`, `docker-compose.yml`, `Makefile`
 
 **Interfaces:**
 - Consumes: nothing
@@ -167,7 +167,7 @@ Expected: `Annotation: function`. If `Annotation` is `undefined` and `StateSchem
 }
 ```
 
-- [ ] **Step 6: Create `vitest.config.ts`**
+- [ ] **Step 6: Create `vitest.config.mts`**
 
 ```ts
 import { defineConfig } from "vitest/config";
