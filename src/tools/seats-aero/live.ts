@@ -122,7 +122,9 @@ export class LiveSeatsAeroClient implements SeatsAeroClient {
   private captureQuota(res: Response): void {
     const num = (h: string) => {
       const v = res.headers.get(h);
-      return v === null ? null : Number(v);
+      if (v === null) return null;
+      const n = Number(v);
+      return Number.isNaN(n) ? null : n;
     };
     const limit = num("x-ratelimit-limit");
     if (limit === null) return; // endpoint did not report quota; keep last known

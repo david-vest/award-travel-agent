@@ -135,4 +135,41 @@ describe("LiveSeatsAeroClient", () => {
     const [url] = fetchSpy.mock.calls[0];
     expect(String(url)).not.toContain("only_direct_flights");
   });
+
+  it("treats a malformed rate-limit header as absent rather than storing NaN", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      okResponse({ data: [], count: 0, hasMore: false, cursor: 0 }, {
+        "x-ratelimit-limit": "not-a-number",
+      }),
+    );
+
+    const client = new LiveSeatsAeroClient("test-key");
+    await client.search({ origin_airport: "ORD", destination_airport: "NRT" });
+
+    const quota = client.quota();
+    expect(quota.limit).not.toBeNaN();
+    expect(quota.limit).toBe(null);
+  });
+
+  it("keeps last-known quota when a later response's limit header is malformed", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    fetchSpy.mockResolvedValueOnce(
+      okResponse({ data: [], count: 0, hasMore: false, cursor: 0 }, {
+        "x-ratelimit-limit": "1000",
+        "x-ratelimit-remaining": "994",
+        "x-ratelimit-reset": "3600",
+      }),
+    );
+    fetchSpy.mockResolvedValueOnce(
+      okResponse({ data: [], count: 0, hasMore: false, cursor: 0 }, {
+        "x-ratelimit-limit": "garbage",
+      }),
+    );
+
+    const client = new LiveSeatsAeroClient("test-key");
+    await client.search({ origin_airport: "ORD", destination_airport: "NRT" });
+    await client.search({ origin_airport: "ORD", destination_airport: "NRT" });
+
+    expect(client.quota()).toEqual({ limit: 1000, remaining: 994, reset: 3600 });
+  });
 });
