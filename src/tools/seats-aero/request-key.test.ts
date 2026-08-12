@@ -41,4 +41,14 @@ describe("requestKey", () => {
       requestKey("/search", {}),
     );
   });
+
+  it("does not drop a non-cursor zero value", () => {
+    expect(requestKey("/search", { take: 0 })).not.toBe(requestKey("/search", {}));
+  });
+
+  it("does not drop an explicit true boolean value", () => {
+    expect(requestKey("/search", { only_direct_flights: true })).not.toBe(
+      requestKey("/search", {}),
+    );
+  });
 });
