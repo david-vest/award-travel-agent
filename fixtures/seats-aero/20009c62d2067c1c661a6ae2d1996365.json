@@ -1,0 +1,654 @@
+{
+  "data": [
+    {
+      "ID": "3HocwOzD7kBPH9ReJu60VXY6ZJd",
+      "RouteID": "36r98YFgiQTqfEUE3iSKbRyvYFN",
+      "AvailabilityID": "36sywS2hYG1n2LGhZrwREdDej5k",
+      "AvailabilitySegments": [
+        {
+          "ID": "3HocwMM0GSPW2wXL5gfISYcEmgr",
+          "RouteID": "36r98YFgiQTqfEUE3iSKbRyvYFN",
+          "AvailabilityID": "36sywS2hYG1n2LGhZrwREdDej5k",
+          "AvailabilityTripID": "3HocwOzD7kBPH9ReJu60VXY6ZJd",
+          "FlightNumber": "UA543",
+          "Distance": 1844,
+          "Duration": 276,
+          "FareClass": "X",
+          "AircraftName": "",
+          "AircraftCode": "788",
+          "OriginAirport": "ORD",
+          "DestinationAirport": "SFO",
+          "DepartsAt": "2026-09-01T10:35:00Z",
+          "ArrivesAt": "2026-09-01T13:11:00Z",
+          "CreatedAt": "2026-08-12T12:34:59.960678Z",
+          "UpdatedAt": "2026-08-13T11:46:19.648689Z",
+          "Source": "jetblue",
+          "Cabin": "economy",
+          "Order": 0
+        },
+        {
+          "ID": "3HocwPSjC3Hb7FFYygykN6mkX1w",
+          "RouteID": "36r98YFgiQTqfEUE3iSKbRyvYFN",
+          "AvailabilityID": "36sywS2hYG1n2LGhZrwREdDej5k",
+          "AvailabilityTripID": "3HocwOzD7kBPH9ReJu60VXY6ZJd",
+          "FlightNumber": "UA990",
+          "Distance": 5576,
+          "Duration": 645,
+          "FareClass": "X",
+          "AircraftName": "",
+          "AircraftCode": "777",
+          "OriginAirport": "SFO",
+          "DestinationAirport": "CDG",
+          "DepartsAt": "2026-09-01T14:40:00Z",
+          "ArrivesAt": "2026-09-02T10:25:00Z",
+          "CreatedAt": "2026-08-12T12:34:59.960678Z",
+          "UpdatedAt": "2026-08-13T11:46:19.648689Z",
+          "Source": "jetblue",
+          "Cabin": "economy",
+          "Order": 1
+        }
+      ],
+      "TotalDuration": 1010,
+      "Stops": 1,
+      "Carriers": "UA, UA",
+      "RemainingSeats": 9,
+      "MileageCost": 81400,
+      "TotalTaxes": 560,
+      "TaxesCurrency": "USD",
+      "TaxesCurrencySymbol": "$",
+      "TotalSegmentDistance": 7420,
+      "OriginAirport": "ORD",
+      "DestinationAirport": "CDG",
+      "Connections": [
+        "SFO"
+      ],
+      "FareClasses": [
+        "X",
+        "X"
+      ],
+      "FlightNumbers": "UA543, UA990",
+      "DepartsAt": "2026-09-01T10:35:00Z",
+      "Cabin": "economy",
+      "ArrivesAt": "2026-09-02T10:25:00Z",
+      "CreatedAt": "2026-08-12T12:34:59.960678Z",
+      "UpdatedAt": "2026-08-13T11:46:19.648689Z",
+      "Source": "jetblue"
+    },
+    {
+      "ID": "3FS3ShAaTm4Oadf8nHXG0Nd7Cr6",
+      "RouteID": "36r98YFgiQTqfEUE3iSKbRyvYFN",
+      "AvailabilityID": "36sywS2hYG1n2LGhZrwREdDej5k",
+      "AvailabilitySegments": [
+        {
+          "ID": "3FS3SliOhN3XOkPRzUwV2TBMLha",
+          "RouteID": "36r98YFgiQTqfEUE3iSKbRyvYFN",
+          "AvailabilityID": "36sywS2hYG1n2LGhZrwREdDej5k",
+          "AvailabilityTripID": "3FS3ShAaTm4Oadf8nHXG0Nd7Cr6",
+          "FlightNumber": "B6906",
+          "Distance": 738,
+          "Duration": 139,
+          "FareClass": "N",
+          "AircraftName": "Airbus A320",
+          "AircraftCode": "320",
+          "OriginAirport": "ORD",
+          "DestinationAirport": "JFK",
+          "DepartsAt": "2026-09-01T09:35:00Z",
+          "ArrivesAt": "2026-09-01T12:54:00Z",
+          "CreatedAt": "2026-06-21T15:10:44.0429Z",
+          "UpdatedAt": "2026-08-13T11:46:19.648689Z",
+          "Source": "jetblue",
+          "Cabin": "business",
+          "Order": 0
+        },
+        {
+          "ID": "3FS3ShHDlzAuqTud2FnBHWJx7Qs",
+          "RouteID": "36r98YFgiQTqfEUE3iSKbRyvYFN",
+          "AvailabilityID": "36sywS2hYG1n2LGhZrwREdDej5k",
+          "AvailabilityTripID": "3FS3ShAaTm4Oadf8nHXG0Nd7Cr6",
+          "FlightNumber": "B61407",
+          "Distance": 3630,
+          "Duration": 461,
+          "FareClass": "N",
+          "AircraftName": "Airbus A321neo",
+          "AircraftCode": "32Q",
+          "OriginAirport": "JFK",
+          "DestinationAirport": "CDG",
+          "DepartsAt": "2026-09-01T19:34:00Z",
+          "ArrivesAt": "2026-09-02T09:15:00Z",
+          "CreatedAt": "2026-06-21T15:10:44.0429Z",
+          "UpdatedAt": "2026-08-13T11:46:19.648689Z",
+          "Source": "jetblue",
+          "Cabin": "business",
+          "Order": 1
+        }
+      ],
+      "TotalDuration": 1000,
+      "Stops": 1,
+      "Carriers": "B6, B6",
+      "RemainingSeats": 2,
+      "MileageCost": 198900,
+      "TotalTaxes": 560,
+      "TaxesCurrency": "USD",
+      "TaxesCurrencySymbol": "$",
+      "TotalSegmentDistance": 4368,
+      "OriginAirport": "ORD",
+      "DestinationAirport": "CDG",
+      "Connections": [
+        "JFK"
+      ],
+      "Aircraft": [
+        "Airbus A320",
+        "Airbus A321neo"
+      ],
+      "FareClasses": [
+        "N",
+        "N"
+      ],
+      "FlightNumbers": "B6906, B61407",
+      "DepartsAt": "2026-09-01T09:35:00Z",
+      "Cabin": "business",
+      "ArrivesAt": "2026-09-02T09:15:00Z",
+      "CreatedAt": "2026-06-21T15:10:44.0429Z",
+      "UpdatedAt": "2026-08-13T11:46:19.648689Z",
+      "Source": "jetblue"
+    },
+    {
+      "ID": "3HocwSDaHwYRK15ucyj7TiziOz4",
+      "RouteID": "36r98YFgiQTqfEUE3iSKbRyvYFN",
+      "AvailabilityID": "36sywS2hYG1n2LGhZrwREdDej5k",
+      "AvailabilitySegments": [
+        {
+          "ID": "3HocwPeJLN5xxMuHpi8gTAjdu3R",
+          "RouteID": "36r98YFgiQTqfEUE3iSKbRyvYFN",
+          "AvailabilityID": "36sywS2hYG1n2LGhZrwREdDej5k",
+          "AvailabilityTripID": "3HocwSDaHwYRK15ucyj7TiziOz4",
+          "FlightNumber": "UA342",
+          "Distance": 1844,
+          "Duration": 285,
+          "FareClass": "X",
+          "AircraftName": "",
+          "AircraftCode": "753",
+          "OriginAirport": "ORD",
+          "DestinationAirport": "SFO",
+          "DepartsAt": "2026-09-01T08:40:00Z",
+          "ArrivesAt": "2026-09-01T11:25:00Z",
+          "CreatedAt": "2026-08-12T12:34:59.960678Z",
+          "UpdatedAt": "2026-08-13T11:46:19.648689Z",
+          "Source": "jetblue",
+          "Cabin": "economy",
+          "Order": 0
+        },
+        {
+          "ID": "3HocwRVeADNacwgmU38Soax9dEI",
+          "RouteID": "36r98YFgiQTqfEUE3iSKbRyvYFN",
+          "AvailabilityID": "36sywS2hYG1n2LGhZrwREdDej5k",
+          "AvailabilityTripID": "3HocwSDaHwYRK15ucyj7TiziOz4",
+          "FlightNumber": "UA990",
+          "Distance": 5576,
+          "Duration": 645,
+          "FareClass": "X",
+          "AircraftName": "",
+          "AircraftCode": "777",
+          "OriginAirport": "SFO",
+          "DestinationAirport": "CDG",
+          "DepartsAt": "2026-09-01T14:40:00Z",
+          "ArrivesAt": "2026-09-02T10:25:00Z",
+          "CreatedAt": "2026-08-12T12:34:59.960678Z",
+          "UpdatedAt": "2026-08-13T11:46:19.648689Z",
+          "Source": "jetblue",
+          "Cabin": "economy",
+          "Order": 1
+        }
+      ],
+      "TotalDuration": 1125,
+      "Stops": 1,
+      "Carriers": "UA, UA",
+      "RemainingSeats": 9,
+      "MileageCost": 81400,
+      "TotalTaxes": 560,
+      "TaxesCurrency": "USD",
+      "TaxesCurrencySymbol": "$",
+      "TotalSegmentDistance": 7420,
+      "OriginAirport": "ORD",
+      "DestinationAirport": "CDG",
+      "Connections": [
+        "SFO"
+      ],
+      "FareClasses": [
+        "X",
+        "X"
+      ],
+      "FlightNumbers": "UA342, UA990",
+      "DepartsAt": "2026-09-01T08:40:00Z",
+      "Cabin": "economy",
+      "ArrivesAt": "2026-09-02T10:25:00Z",
+      "CreatedAt": "2026-08-12T12:34:59.960678Z",
+      "UpdatedAt": "2026-08-13T11:46:19.648689Z",
+      "Source": "jetblue"
+    },
+    {
+      "ID": "3FS3SevsiqGPfOW03EctO2fZKus",
+      "RouteID": "36r98YFgiQTqfEUE3iSKbRyvYFN",
+      "AvailabilityID": "36sywS2hYG1n2LGhZrwREdDej5k",
+      "AvailabilitySegments": [
+        {
+          "ID": "3FS3SlYglbLZ9INB2uge5sGKP6L",
+          "RouteID": "36r98YFgiQTqfEUE3iSKbRyvYFN",
+          "AvailabilityID": "36sywS2hYG1n2LGhZrwREdDej5k",
+          "AvailabilityTripID": "3FS3SevsiqGPfOW03EctO2fZKus",
+          "FlightNumber": "B6312",
+          "Distance": 864,
+          "Duration": 147,
+          "FareClass": "W",
+          "AircraftName": "Airbus A220",
+          "AircraftCode": "223",
+          "OriginAirport": "ORD",
+          "DestinationAirport": "BOS",
+          "DepartsAt": "2026-09-01T11:01:00Z",
+          "ArrivesAt": "2026-09-01T14:28:00Z",
+          "CreatedAt": "2026-06-21T15:10:44.0429Z",
+          "UpdatedAt": "2026-08-13T11:46:19.648689Z",
+          "Source": "jetblue",
+          "Cabin": "economy",
+          "Order": 0
+        },
+        {
+          "ID": "3FS3SickqWIJ2q7dZC7tHlRjGUu",
+          "RouteID": "36r98YFgiQTqfEUE3iSKbRyvYFN",
+          "AvailabilityID": "36sywS2hYG1n2LGhZrwREdDej5k",
+          "AvailabilityTripID": "3FS3SevsiqGPfOW03EctO2fZKus",
+          "FlightNumber": "B633",
+          "Distance": 3444,
+          "Duration": 426,
+          "FareClass": "W",
+          "AircraftName": "Airbus A321neo",
+          "AircraftCode": "32Q",
+          "OriginAirport": "BOS",
+          "DestinationAirport": "CDG",
+          "DepartsAt": "2026-09-01T21:24:00Z",
+          "ArrivesAt": "2026-09-02T10:30:00Z",
+          "CreatedAt": "2026-06-21T15:10:44.0429Z",
+          "UpdatedAt": "2026-08-13T11:46:19.648689Z",
+          "Source": "jetblue",
+          "Cabin": "economy",
+          "Order": 1
+        }
+      ],
+      "TotalDuration": 989,
+      "Stops": 1,
+      "Carriers": "B6, B6",
+      "RemainingSeats": 6,
+      "MileageCost": 44700,
+      "OptionalPrices": {
+        "BASICECONOMY": {
+          "MileageCost": 40900,
+          "Filtered": false
+        }
+      },
+      "TotalTaxes": 560,
+      "TaxesCurrency": "USD",
+      "TaxesCurrencySymbol": "$",
+      "TotalSegmentDistance": 4308,
+      "OriginAirport": "ORD",
+      "DestinationAirport": "CDG",
+      "Connections": [
+        "BOS"
+      ],
+      "Aircraft": [
+        "Airbus A220",
+        "Airbus A321neo"
+      ],
+      "FareClasses": [
+        "W",
+        "W"
+      ],
+      "FlightNumbers": "B6312, B633",
+      "DepartsAt": "2026-09-01T11:01:00Z",
+      "Cabin": "economy",
+      "ArrivesAt": "2026-09-02T10:30:00Z",
+      "CreatedAt": "2026-06-21T15:10:44.0429Z",
+      "UpdatedAt": "2026-08-13T11:46:19.648689Z",
+      "Source": "jetblue"
+    },
+    {
+      "ID": "3FS3SidE3VZAuEmio0LvYv6EJCR",
+      "RouteID": "36r98YFgiQTqfEUE3iSKbRyvYFN",
+      "AvailabilityID": "36sywS2hYG1n2LGhZrwREdDej5k",
+      "AvailabilitySegments": [
+        {
+          "ID": "3FS3SgTo9I9dJNCZkVGTni1c2I0",
+          "RouteID": "36r98YFgiQTqfEUE3iSKbRyvYFN",
+          "AvailabilityID": "36sywS2hYG1n2LGhZrwREdDej5k",
+          "AvailabilityTripID": "3FS3SidE3VZAuEmio0LvYv6EJCR",
+          "FlightNumber": "B6906",
+          "Distance": 738,
+          "Duration": 139,
+          "FareClass": "M",
+          "AircraftName": "Airbus A320",
+          "AircraftCode": "320",
+          "OriginAirport": "ORD",
+          "DestinationAirport": "JFK",
+          "DepartsAt": "2026-09-01T09:35:00Z",
+          "ArrivesAt": "2026-09-01T12:54:00Z",
+          "CreatedAt": "2026-06-21T15:10:44.0429Z",
+          "UpdatedAt": "2026-08-13T11:46:19.648689Z",
+          "Source": "jetblue",
+          "Cabin": "economy",
+          "Order": 0
+        },
+        {
+          "ID": "3FS3Sk7mbJ2oGBEdK8QHf2uo3JD",
+          "RouteID": "36r98YFgiQTqfEUE3iSKbRyvYFN",
+          "AvailabilityID": "36sywS2hYG1n2LGhZrwREdDej5k",
+          "AvailabilityTripID": "3FS3SidE3VZAuEmio0LvYv6EJCR",
+          "FlightNumber": "B61407",
+          "Distance": 3630,
+          "Duration": 461,
+          "FareClass": "M",
+          "AircraftName": "Airbus A321neo",
+          "AircraftCode": "32Q",
+          "OriginAirport": "JFK",
+          "DestinationAirport": "CDG",
+          "DepartsAt": "2026-09-01T19:34:00Z",
+          "ArrivesAt": "2026-09-02T09:15:00Z",
+          "CreatedAt": "2026-06-21T15:10:44.0429Z",
+          "UpdatedAt": "2026-08-13T11:46:19.648689Z",
+          "Source": "jetblue",
+          "Cabin": "economy",
+          "Order": 1
+        }
+      ],
+      "TotalDuration": 1000,
+      "Stops": 1,
+      "Carriers": "B6, B6",
+      "RemainingSeats": 2,
+      "MileageCost": 40400,
+      "OptionalPrices": {
+        "BASICECONOMY": {
+          "MileageCost": 35500,
+          "Filtered": false
+        }
+      },
+      "TotalTaxes": 560,
+      "TaxesCurrency": "USD",
+      "TaxesCurrencySymbol": "$",
+      "TotalSegmentDistance": 4368,
+      "OriginAirport": "ORD",
+      "DestinationAirport": "CDG",
+      "Connections": [
+        "JFK"
+      ],
+      "Aircraft": [
+        "Airbus A320",
+        "Airbus A321neo"
+      ],
+      "FareClasses": [
+        "M",
+        "M"
+      ],
+      "FlightNumbers": "B6906, B61407",
+      "DepartsAt": "2026-09-01T09:35:00Z",
+      "Cabin": "economy",
+      "ArrivesAt": "2026-09-02T09:15:00Z",
+      "CreatedAt": "2026-06-21T15:10:44.0429Z",
+      "UpdatedAt": "2026-08-13T11:46:19.648689Z",
+      "Source": "jetblue"
+    },
+    {
+      "ID": "39OyBgWJJnDjBTOYS93r6NQPRz9",
+      "RouteID": "36r98YFgiQTqfEUE3iSKbRyvYFN",
+      "AvailabilityID": "36sywS2hYG1n2LGhZrwREdDej5k",
+      "AvailabilitySegments": [
+        {
+          "ID": "39OyBfFH8zosxCFSDjMTtqUtzYJ",
+          "RouteID": "36r98YFgiQTqfEUE3iSKbRyvYFN",
+          "AvailabilityID": "36sywS2hYG1n2LGhZrwREdDej5k",
+          "AvailabilityTripID": "39OyBgWJJnDjBTOYS93r6NQPRz9",
+          "FlightNumber": "B61206",
+          "Distance": 738,
+          "Duration": 137,
+          "FareClass": "M",
+          "AircraftName": "Airbus A220",
+          "AircraftCode": "223",
+          "OriginAirport": "ORD",
+          "DestinationAirport": "JFK",
+          "DepartsAt": "2026-09-01T06:00:00Z",
+          "ArrivesAt": "2026-09-01T09:17:00Z",
+          "CreatedAt": "2026-02-08T20:07:57.840602Z",
+          "UpdatedAt": "2026-08-13T11:46:19.648689Z",
+          "Source": "jetblue",
+          "Cabin": "economy",
+          "Order": 0
+        },
+        {
+          "ID": "39OyBkni2VExF53zEOEJGSSCtCL",
+          "RouteID": "36r98YFgiQTqfEUE3iSKbRyvYFN",
+          "AvailabilityID": "36sywS2hYG1n2LGhZrwREdDej5k",
+          "AvailabilityTripID": "39OyBgWJJnDjBTOYS93r6NQPRz9",
+          "FlightNumber": "B61407",
+          "Distance": 3630,
+          "Duration": 461,
+          "FareClass": "M",
+          "AircraftName": "Airbus A321neo",
+          "AircraftCode": "32Q",
+          "OriginAirport": "JFK",
+          "DestinationAirport": "CDG",
+          "DepartsAt": "2026-09-01T19:34:00Z",
+          "ArrivesAt": "2026-09-02T09:15:00Z",
+          "CreatedAt": "2026-02-08T20:07:57.840602Z",
+          "UpdatedAt": "2026-08-13T11:46:19.648689Z",
+          "Source": "jetblue",
+          "Cabin": "economy",
+          "Order": 1
+        }
+      ],
+      "TotalDuration": 1215,
+      "Stops": 1,
+      "Carriers": "B6, B6",
+      "RemainingSeats": 2,
+      "MileageCost": 40400,
+      "OptionalPrices": {
+        "BASICECONOMY": {
+          "MileageCost": 35500,
+          "Filtered": false
+        }
+      },
+      "TotalTaxes": 560,
+      "TaxesCurrency": "USD",
+      "TaxesCurrencySymbol": "$",
+      "TotalSegmentDistance": 4368,
+      "OriginAirport": "ORD",
+      "DestinationAirport": "CDG",
+      "Connections": [
+        "JFK"
+      ],
+      "Aircraft": [
+        "Airbus A220",
+        "Airbus A321neo"
+      ],
+      "FareClasses": [
+        "M",
+        "M"
+      ],
+      "FlightNumbers": "B61206, B61407",
+      "DepartsAt": "2026-09-01T06:00:00Z",
+      "Cabin": "economy",
+      "ArrivesAt": "2026-09-02T09:15:00Z",
+      "CreatedAt": "2026-02-08T20:07:57.840602Z",
+      "UpdatedAt": "2026-08-13T11:46:19.648689Z",
+      "Source": "jetblue"
+    },
+    {
+      "ID": "3HjH6kmeKYDN9aNHgZhN98a9ISp",
+      "RouteID": "36r98YFgiQTqfEUE3iSKbRyvYFN",
+      "AvailabilityID": "36sywS2hYG1n2LGhZrwREdDej5k",
+      "AvailabilitySegments": [
+        {
+          "ID": "3HjH6iBdrIpXnNvp8aICBciRisn",
+          "RouteID": "36r98YFgiQTqfEUE3iSKbRyvYFN",
+          "AvailabilityID": "36sywS2hYG1n2LGhZrwREdDej5k",
+          "AvailabilityTripID": "3HjH6kmeKYDN9aNHgZhN98a9ISp",
+          "FlightNumber": "UA293",
+          "Distance": 588,
+          "Duration": 126,
+          "FareClass": "X",
+          "AircraftName": "",
+          "AircraftCode": "32Q",
+          "OriginAirport": "ORD",
+          "DestinationAirport": "IAD",
+          "DepartsAt": "2026-09-01T12:56:00Z",
+          "ArrivesAt": "2026-09-01T16:02:00Z",
+          "CreatedAt": "2026-08-10T15:06:24.558865Z",
+          "UpdatedAt": "2026-08-13T11:46:19.648689Z",
+          "Source": "jetblue",
+          "Cabin": "economy",
+          "Order": 0
+        },
+        {
+          "ID": "3HjH6jxp2eS6AxmRObvQgVFQEdl",
+          "RouteID": "36r98YFgiQTqfEUE3iSKbRyvYFN",
+          "AvailabilityID": "36sywS2hYG1n2LGhZrwREdDej5k",
+          "AvailabilityTripID": "3HjH6kmeKYDN9aNHgZhN98a9ISp",
+          "FlightNumber": "UA915",
+          "Distance": 3855,
+          "Duration": 460,
+          "FareClass": "X",
+          "AircraftName": "",
+          "AircraftCode": "777",
+          "OriginAirport": "IAD",
+          "DestinationAirport": "CDG",
+          "DepartsAt": "2026-09-01T18:05:00Z",
+          "ArrivesAt": "2026-09-02T07:45:00Z",
+          "CreatedAt": "2026-08-10T15:06:24.558865Z",
+          "UpdatedAt": "2026-08-13T11:46:19.648689Z",
+          "Source": "jetblue",
+          "Cabin": "economy",
+          "Order": 1
+        }
+      ],
+      "TotalDuration": 709,
+      "Stops": 1,
+      "Carriers": "UA, UA",
+      "RemainingSeats": 7,
+      "MileageCost": 55000,
+      "TotalTaxes": 560,
+      "TaxesCurrency": "USD",
+      "TaxesCurrencySymbol": "$",
+      "TotalSegmentDistance": 4443,
+      "OriginAirport": "ORD",
+      "DestinationAirport": "CDG",
+      "Connections": [
+        "IAD"
+      ],
+      "FareClasses": [
+        "X",
+        "X"
+      ],
+      "FlightNumbers": "UA293, UA915",
+      "DepartsAt": "2026-09-01T12:56:00Z",
+      "Cabin": "economy",
+      "ArrivesAt": "2026-09-02T07:45:00Z",
+      "CreatedAt": "2026-08-10T15:06:24.558865Z",
+      "UpdatedAt": "2026-08-13T11:46:19.648689Z",
+      "Source": "jetblue"
+    },
+    {
+      "ID": "3HjH6pgfu7UekkDOkdahwBY5Mqg",
+      "RouteID": "36r98YFgiQTqfEUE3iSKbRyvYFN",
+      "AvailabilityID": "36sywS2hYG1n2LGhZrwREdDej5k",
+      "AvailabilitySegments": [
+        {
+          "ID": "3HjH6pKjmJ7qpNZDeaxP3W5WOGb",
+          "RouteID": "36r98YFgiQTqfEUE3iSKbRyvYFN",
+          "AvailabilityID": "36sywS2hYG1n2LGhZrwREdDej5k",
+          "AvailabilityTripID": "3HjH6pgfu7UekkDOkdahwBY5Mqg",
+          "FlightNumber": "UA2798",
+          "Distance": 588,
+          "Duration": 125,
+          "FareClass": "X",
+          "AircraftName": "",
+          "AircraftCode": "739",
+          "OriginAirport": "ORD",
+          "DestinationAirport": "IAD",
+          "DepartsAt": "2026-09-01T10:50:00Z",
+          "ArrivesAt": "2026-09-01T13:55:00Z",
+          "CreatedAt": "2026-08-10T15:06:24.558865Z",
+          "UpdatedAt": "2026-08-13T11:46:19.648689Z",
+          "Source": "jetblue",
+          "Cabin": "economy",
+          "Order": 0
+        },
+        {
+          "ID": "3HjH6mORtSF7uF6k2qE1z3chD1n",
+          "RouteID": "36r98YFgiQTqfEUE3iSKbRyvYFN",
+          "AvailabilityID": "36sywS2hYG1n2LGhZrwREdDej5k",
+          "AvailabilityTripID": "3HjH6pgfu7UekkDOkdahwBY5Mqg",
+          "FlightNumber": "UA915",
+          "Distance": 3855,
+          "Duration": 460,
+          "FareClass": "X",
+          "AircraftName": "",
+          "AircraftCode": "777",
+          "OriginAirport": "IAD",
+          "DestinationAirport": "CDG",
+          "DepartsAt": "2026-09-01T18:05:00Z",
+          "ArrivesAt": "2026-09-02T07:45:00Z",
+          "CreatedAt": "2026-08-10T15:06:24.558865Z",
+          "UpdatedAt": "2026-08-13T11:46:19.648689Z",
+          "Source": "jetblue",
+          "Cabin": "economy",
+          "Order": 1
+        }
+      ],
+      "TotalDuration": 835,
+      "Stops": 1,
+      "Carriers": "UA, UA",
+      "RemainingSeats": 7,
+      "MileageCost": 55000,
+      "TotalTaxes": 1120,
+      "TaxesCurrency": "USD",
+      "TaxesCurrencySymbol": "$",
+      "TotalSegmentDistance": 4443,
+      "OriginAirport": "ORD",
+      "DestinationAirport": "CDG",
+      "Connections": [
+        "IAD"
+      ],
+      "FareClasses": [
+        "X",
+        "X"
+      ],
+      "FlightNumbers": "UA2798, UA915",
+      "DepartsAt": "2026-09-01T10:50:00Z",
+      "Cabin": "economy",
+      "ArrivesAt": "2026-09-02T07:45:00Z",
+      "CreatedAt": "2026-08-10T15:06:24.558865Z",
+      "UpdatedAt": "2026-08-13T11:46:19.648689Z",
+      "Source": "jetblue"
+    }
+  ],
+  "origin_coordinates": {
+    "Lat": 41.976912,
+    "Lon": -87.904876
+  },
+  "destination_coordinates": {
+    "Lat": 49.003196,
+    "Lon": 2.567023
+  },
+  "booking_links": [
+    {
+      "label": "Book via JetBlue TrueBlue",
+      "link": "https://www.jetblue.com/booking/flights?from=ORD&to=CDG&depart=2026-09-01&isMultiCity=false&noOfRoute=1&lang=en&adults=1&children=0&infants=0&sharedMarket=false&roundTripFaresFlag=true&usePoints=true&utm_source=seatsaero",
+      "primary": true
+    },
+    {
+      "label": "Book via Qatar Airways Privilege Club",
+      "link": "https://booking.qatarairways.com/nsp/views/showBooking.action?widget=QR&searchType=F&addTaxToFare=Y&minPurTime=0&upsellCallId=100&tripType=O&bookingClass=E&allowRedemption=Y&flexibleDate=Off&selLang=EN&fromStation=ORD&from=ORD&toStation=CDG&to=CDG&departingHidden=2026-09-01&departing=2026-09-01&adults=1&children=0&infants=0&teenager=0&ofw=0&promoCode=&qmilesFlow=true&paymentMode=qmiles&upsellCallId=100&utm_source=seatsaero",
+      "primary": false
+    }
+  ],
+  "carriers": {
+    "B6": "jetBlue",
+    "UA": "United Airlines"
+  }
+}

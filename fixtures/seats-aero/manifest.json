@@ -1,0 +1,154 @@
+{
+  "1b05e9a1faf7db32a3a02e08bd7486d2.json": {
+    "endpoint": "/search",
+    "params": {
+      "origin_airport": "ORD,MDW",
+      "destination_airport": "NRT,HND,ICN,PVG,HKG,SIN,BKK,TPE",
+      "cabins": "business",
+      "only_direct_flights": true,
+      "start_date": "2026-09-01",
+      "end_date": "2026-10-31"
+    },
+    "recordedAt": "2026-08-13T16:15:01.951Z"
+  },
+  "6fcd785b547288eceecfc18c32be9733.json": {
+    "endpoint": "/search",
+    "params": {
+      "origin_airport": "ORD",
+      "destination_airport": "NRT",
+      "cabins": "business,first",
+      "start_date": "2026-09-01",
+      "end_date": "2026-09-30"
+    },
+    "recordedAt": "2026-08-13T16:15:02.019Z"
+  },
+  "18d0a939866ac75cc454386399cd80d9.json": {
+    "endpoint": "/search",
+    "params": {
+      "origin_airport": "ORD,MDW",
+      "destination_airport": "LHR,CDG,FRA,AMS",
+      "cabins": "business",
+      "start_date": "2026-09-01",
+      "end_date": "2026-09-30"
+    },
+    "recordedAt": "2026-08-13T16:15:02.093Z"
+  },
+  "d06c5560d3cfc0c4a92ed153f19250f0.json": {
+    "endpoint": "/availability",
+    "params": {
+      "source": "aeroplan",
+      "origin_region": "North America",
+      "destination_region": "Europe",
+      "cabin": "business",
+      "start_date": "2026-09-01",
+      "end_date": "2026-09-30"
+    },
+    "recordedAt": "2026-08-13T16:15:03.599Z"
+  },
+  "648ce610dba0435ca8ae3ef4847c1e52.json": {
+    "endpoint": "/availability",
+    "params": {
+      "source": "united",
+      "origin_region": "North America",
+      "destination_region": "Asia",
+      "cabin": "business",
+      "start_date": "2026-09-01",
+      "end_date": "2026-09-30"
+    },
+    "recordedAt": "2026-08-13T16:15:04.743Z"
+  },
+  "9a6946eeabeedf403ffb24dfba8bc150.json": {
+    "endpoint": "/availability",
+    "params": {
+      "source": "flyingblue",
+      "origin_region": "North America",
+      "destination_region": "Europe",
+      "cabin": "economy",
+      "start_date": "2026-09-01",
+      "end_date": "2026-09-30"
+    },
+    "recordedAt": "2026-08-13T16:15:05.203Z"
+  },
+  "7239f17f2f122c4e2f315d9c4a0a2283.json": {
+    "endpoint": "/routes",
+    "params": {
+      "source": "aeroplan"
+    },
+    "recordedAt": "2026-08-13T16:15:05.360Z"
+  },
+  "49ea2c6f72f480f1142476ffa364cdd9.json": {
+    "endpoint": "/trips/33eRmiPnJQgz3lJ16PVsEiPacFc",
+    "params": {},
+    "recordedAt": "2026-08-13T16:15:05.622Z"
+  },
+  "9f59ca3f414f51897c164006e66ce02d.json": {
+    "endpoint": "/trips/32PDjh72yEpfnNwjZhjWlc21xQ4",
+    "params": {},
+    "recordedAt": "2026-08-13T16:15:05.736Z"
+  },
+  "b8e0bb4854d4d3b3d5fc0e112bb1cc14.json": {
+    "endpoint": "/trips/3GeIr7YAYVqxlX8su9xqs1IvraR",
+    "params": {},
+    "recordedAt": "2026-08-13T16:15:05.807Z"
+  },
+  "ded4b3d6996179178671de7c227878d2.json": {
+    "endpoint": "/trips/3GeIrQ70Go3zeIhMumOWrSv1oh2",
+    "params": {},
+    "recordedAt": "2026-08-13T16:15:05.891Z"
+  },
+  "199a325b2da02c65e19b04dae78ee689.json": {
+    "endpoint": "/trips/33iMpt8rDvVWIJMZ6KLHJkY1QX3",
+    "params": {},
+    "recordedAt": "2026-08-13T16:15:06.082Z"
+  },
+  "9eba1fbbabe871572fbe021e0c1e930c.json": {
+    "endpoint": "/trips/33hGsmM4zxoeE6CSXDotBiOPoLP",
+    "params": {},
+    "recordedAt": "2026-08-13T16:15:06.538Z"
+  },
+  "1574fd02fb45cb8e9318ef0bc021b09d.json": {
+    "endpoint": "/trips/33sxhyzpVlngYjn2YwGbxI1Xubj",
+    "params": {},
+    "recordedAt": "2026-08-13T16:15:06.682Z"
+  },
+  "20009c62d2067c1c661a6ae2d1996365.json": {
+    "endpoint": "/trips/36sywS2hYG1n2LGhZrwREdDej5k",
+    "params": {},
+    "recordedAt": "2026-08-13T16:15:06.805Z"
+  },
+  "8933e2b3c86f908f53f40e6c553da415.json": {
+    "endpoint": "/trips/32PDk5YCI1g4fPiRE8lvjAlyHUi",
+    "params": {},
+    "recordedAt": "2026-08-13T16:15:06.871Z"
+  },
+  "7adf22194aeb3498af0eeec8aa56ad68.json": {
+    "endpoint": "/trips/33sxi8nZqLK3jLaQPZoNSZUGdmh",
+    "params": {},
+    "recordedAt": "2026-08-13T16:15:06.997Z"
+  },
+  "dc2712e7be55ed6a62a739f0a9327efe.json": {
+    "endpoint": "/trips/32aGamJSbdka4fMvRKYQmkk21WA",
+    "params": {},
+    "recordedAt": "2026-08-13T16:15:07.274Z"
+  },
+  "2a104c4490909e370297b53f1f411212.json": {
+    "endpoint": "/trips/32aGeG0IjqT9EKR7iakHyKtAdjs",
+    "params": {},
+    "recordedAt": "2026-08-13T16:15:07.397Z"
+  },
+  "5c8d3504733500ee54ccff30c2d1ca3a.json": {
+    "endpoint": "/trips/32aGfa4gLFSLCw9UNTwYRnatKPW",
+    "params": {},
+    "recordedAt": "2026-08-13T16:15:07.467Z"
+  },
+  "a61218510b1820b5a7e1ea867605749c.json": {
+    "endpoint": "/trips/32aGkXGgR64Vj3cgg9O3ZrZcdOT",
+    "params": {},
+    "recordedAt": "2026-08-13T16:15:07.690Z"
+  },
+  "f8472b89687941a3c599a2310effb65b.json": {
+    "endpoint": "/trips/32aGm6JT7gwl5iXf549ah4HQI3Y",
+    "params": {},
+    "recordedAt": "2026-08-13T16:15:07.969Z"
+  }
+}

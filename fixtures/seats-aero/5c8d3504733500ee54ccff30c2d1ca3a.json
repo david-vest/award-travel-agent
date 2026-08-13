@@ -1,0 +1,267 @@
+{
+  "data": [
+    {
+      "ID": "3HVjZp6FnRFzD2jikX8g3zU7QT1",
+      "RouteID": "2OfooPgmhHeLnn16EVBkieByHGJ",
+      "AvailabilityID": "32aGfa4gLFSLCw9UNTwYRnatKPW",
+      "AvailabilitySegments": [
+        {
+          "ID": "3HVjZtx9kHIxNLgVuSFYifIKhYz",
+          "RouteID": "2OfooPgmhHeLnn16EVBkieByHGJ",
+          "AvailabilityID": "32aGfa4gLFSLCw9UNTwYRnatKPW",
+          "AvailabilityTripID": "3HVjZp6FnRFzD2jikX8g3zU7QT1",
+          "FlightNumber": "LX23",
+          "Distance": 3857,
+          "Duration": 470,
+          "FareClass": "X",
+          "AircraftName": "Airbus A330-300",
+          "AircraftCode": "333",
+          "OriginAirport": "JFK",
+          "DestinationAirport": "GVA",
+          "DepartsAt": "2026-09-01T19:25:00Z",
+          "ArrivesAt": "2026-09-02T09:15:00Z",
+          "CreatedAt": "2026-08-05T20:03:08.372732Z",
+          "UpdatedAt": "2026-08-11T00:20:07.722842Z",
+          "Source": "aeroplan",
+          "Cabin": "economy",
+          "Order": 0
+        },
+        {
+          "ID": "3HVjZwIRea1Zyaalikg9ApwpuBR",
+          "RouteID": "2OfooPgmhHeLnn16EVBkieByHGJ",
+          "AvailabilityID": "32aGfa4gLFSLCw9UNTwYRnatKPW",
+          "AvailabilityTripID": "3HVjZp6FnRFzD2jikX8g3zU7QT1",
+          "FlightNumber": "LX2092",
+          "Distance": 930,
+          "Duration": 160,
+          "FareClass": "X",
+          "AircraftName": "Airbus A220",
+          "AircraftCode": "223",
+          "OriginAirport": "GVA",
+          "DestinationAirport": "LIS",
+          "DepartsAt": "2026-09-02T12:05:00Z",
+          "ArrivesAt": "2026-09-02T13:45:00Z",
+          "CreatedAt": "2026-08-05T20:03:08.372732Z",
+          "UpdatedAt": "2026-08-11T00:20:07.722842Z",
+          "Source": "aeroplan",
+          "Cabin": "economy",
+          "Order": 1
+        }
+      ],
+      "TotalDuration": 800,
+      "Stops": 1,
+      "Carriers": "LX",
+      "RemainingSeats": 9,
+      "MileageCost": 42500,
+      "TotalTaxes": 12660,
+      "TaxesCurrency": "CAD",
+      "TaxesCurrencySymbol": "$",
+      "TotalSegmentDistance": 4787,
+      "OriginAirport": "JFK",
+      "DestinationAirport": "LIS",
+      "Connections": [
+        "GVA"
+      ],
+      "Aircraft": [
+        "Airbus A330-300",
+        "Airbus A220"
+      ],
+      "FareClasses": [
+        "X",
+        "X"
+      ],
+      "FlightNumbers": "LX23, LX2092",
+      "DepartsAt": "2026-09-01T19:25:00Z",
+      "Cabin": "economy",
+      "ArrivesAt": "2026-09-02T13:45:00Z",
+      "CreatedAt": "2026-08-05T20:03:08.372732Z",
+      "UpdatedAt": "2026-08-11T00:20:07.722842Z",
+      "Source": "aeroplan"
+    },
+    {
+      "ID": "3HPjbSNDhMJbwZDQWfyS40xFQKh",
+      "RouteID": "2OfooPgmhHeLnn16EVBkieByHGJ",
+      "AvailabilityID": "32aGfa4gLFSLCw9UNTwYRnatKPW",
+      "AvailabilitySegments": [
+        {
+          "ID": "3HPjbSmIMK6hspnZkBNQym8jPwS",
+          "RouteID": "2OfooPgmhHeLnn16EVBkieByHGJ",
+          "AvailabilityID": "32aGfa4gLFSLCw9UNTwYRnatKPW",
+          "AvailabilityTripID": "3HPjbSNDhMJbwZDQWfyS40xFQKh",
+          "FlightNumber": "SN502",
+          "Distance": 3661,
+          "Duration": 450,
+          "FareClass": "X",
+          "AircraftName": "Airbus A330-300",
+          "AircraftCode": "333",
+          "OriginAirport": "JFK",
+          "DestinationAirport": "BRU",
+          "DepartsAt": "2026-09-01T18:10:00Z",
+          "ArrivesAt": "2026-09-02T07:40:00Z",
+          "CreatedAt": "2026-08-03T17:04:28.29474Z",
+          "UpdatedAt": "2026-08-11T00:20:07.722842Z",
+          "Source": "aeroplan",
+          "Cabin": "economy",
+          "Order": 0
+        },
+        {
+          "ID": "3HPjbNdf6wCSnadeEZ7C9a3MDmZ",
+          "RouteID": "2OfooPgmhHeLnn16EVBkieByHGJ",
+          "AvailabilityID": "32aGfa4gLFSLCw9UNTwYRnatKPW",
+          "AvailabilityTripID": "3HPjbSNDhMJbwZDQWfyS40xFQKh",
+          "FlightNumber": "SN3819",
+          "Distance": 1068,
+          "Duration": 175,
+          "FareClass": "X",
+          "AircraftName": "Airbus A320",
+          "AircraftCode": "320",
+          "OriginAirport": "BRU",
+          "DestinationAirport": "LIS",
+          "DepartsAt": "2026-09-02T17:05:00Z",
+          "ArrivesAt": "2026-09-02T19:00:00Z",
+          "CreatedAt": "2026-08-03T17:04:28.29474Z",
+          "UpdatedAt": "2026-08-11T00:20:07.722842Z",
+          "Source": "aeroplan",
+          "Cabin": "economy",
+          "Order": 1
+        }
+      ],
+      "TotalDuration": 1190,
+      "Stops": 1,
+      "Carriers": "SN",
+      "RemainingSeats": 9,
+      "MileageCost": 42500,
+      "TotalTaxes": 11740,
+      "TaxesCurrency": "CAD",
+      "TaxesCurrencySymbol": "$",
+      "TotalSegmentDistance": 4729,
+      "OriginAirport": "JFK",
+      "DestinationAirport": "LIS",
+      "Connections": [
+        "BRU"
+      ],
+      "Aircraft": [
+        "Airbus A330-300",
+        "Airbus A320"
+      ],
+      "FareClasses": [
+        "X",
+        "X"
+      ],
+      "FlightNumbers": "SN502, SN3819",
+      "DepartsAt": "2026-09-01T18:10:00Z",
+      "Cabin": "economy",
+      "ArrivesAt": "2026-09-02T19:00:00Z",
+      "CreatedAt": "2026-08-03T17:04:28.29474Z",
+      "UpdatedAt": "2026-08-11T00:20:07.722842Z",
+      "Source": "aeroplan"
+    },
+    {
+      "ID": "3HkMRsH8LDRUQIe6rQ6A4Aixk7s",
+      "RouteID": "2OfooPgmhHeLnn16EVBkieByHGJ",
+      "AvailabilityID": "32aGfa4gLFSLCw9UNTwYRnatKPW",
+      "AvailabilitySegments": [
+        {
+          "ID": "3HkMRpirOwR7PSxXC9KLKV0JXIZ",
+          "RouteID": "2OfooPgmhHeLnn16EVBkieByHGJ",
+          "AvailabilityID": "32aGfa4gLFSLCw9UNTwYRnatKPW",
+          "AvailabilityTripID": "3HkMRsH8LDRUQIe6rQ6A4Aixk7s",
+          "FlightNumber": "LX23",
+          "Distance": 3857,
+          "Duration": 470,
+          "FareClass": "I",
+          "AircraftName": "Airbus A330-300",
+          "AircraftCode": "333",
+          "OriginAirport": "JFK",
+          "DestinationAirport": "GVA",
+          "DepartsAt": "2026-09-01T19:25:00Z",
+          "ArrivesAt": "2026-09-02T09:15:00Z",
+          "CreatedAt": "2026-08-11T00:20:07.722842Z",
+          "UpdatedAt": "2026-08-11T00:20:07.722842Z",
+          "Source": "aeroplan",
+          "Cabin": "business",
+          "Order": 0
+        },
+        {
+          "ID": "3HkMRp2IF3KERI74W6FefWMeF3d",
+          "RouteID": "2OfooPgmhHeLnn16EVBkieByHGJ",
+          "AvailabilityID": "32aGfa4gLFSLCw9UNTwYRnatKPW",
+          "AvailabilityTripID": "3HkMRsH8LDRUQIe6rQ6A4Aixk7s",
+          "FlightNumber": "LX2092",
+          "Distance": 930,
+          "Duration": 160,
+          "FareClass": "I",
+          "AircraftName": "Airbus A220",
+          "AircraftCode": "223",
+          "OriginAirport": "GVA",
+          "DestinationAirport": "LIS",
+          "DepartsAt": "2026-09-02T12:05:00Z",
+          "ArrivesAt": "2026-09-02T13:45:00Z",
+          "CreatedAt": "2026-08-11T00:20:07.722842Z",
+          "UpdatedAt": "2026-08-11T00:20:07.722842Z",
+          "Source": "aeroplan",
+          "Cabin": "business",
+          "Order": 1
+        }
+      ],
+      "TotalDuration": 800,
+      "Stops": 1,
+      "Carriers": "LX",
+      "RemainingSeats": 4,
+      "MileageCost": 75000,
+      "TotalTaxes": 12660,
+      "TaxesCurrency": "CAD",
+      "TaxesCurrencySymbol": "$",
+      "TotalSegmentDistance": 4787,
+      "OriginAirport": "JFK",
+      "DestinationAirport": "LIS",
+      "Connections": [
+        "GVA"
+      ],
+      "Aircraft": [
+        "Airbus A330-300",
+        "Airbus A220"
+      ],
+      "FareClasses": [
+        "I",
+        "I"
+      ],
+      "FlightNumbers": "LX23, LX2092",
+      "DepartsAt": "2026-09-01T19:25:00Z",
+      "Cabin": "business",
+      "ArrivesAt": "2026-09-02T13:45:00Z",
+      "CreatedAt": "2026-08-11T00:20:07.722842Z",
+      "UpdatedAt": "2026-08-11T00:20:07.722842Z",
+      "Source": "aeroplan"
+    }
+  ],
+  "origin_coordinates": {
+    "Lat": 40.642335,
+    "Lon": -73.78817
+  },
+  "destination_coordinates": {
+    "Lat": 38.770043,
+    "Lon": -9.128165
+  },
+  "booking_links": [
+    {
+      "label": "Book via Air Canada Aeroplan",
+      "link": "https://www.aircanada.com/aeroplan/redeem/availability/outbound?org0=JFK&dest0=LIS&departureDate0=2026-09-01&lang=en-CA&tripType=O&ADT=1&YTH=0&CHD=0&INF=0&INS=0&marketCode=INT",
+      "primary": true
+    },
+    {
+      "label": "Book via United MileagePlus",
+      "link": "https://www.united.com/en/us/fsr/choose-flights?f=JFK&t=LIS&d=2026-09-01&sc=7&st=bestmatches&cbm=-1&cbm2=-1&ft=0&cp=0&tt=1&at=1&rm=1&act=0&px=1&taxng=1&clm=7&tqp=A",
+      "primary": false
+    },
+    {
+      "label": "Book via Copa ConnectMiles",
+      "link": "https://shopping.copaair.com/miles?roundtrip=false&area1=JFK&area2=LIS&date1=2026-09-01&date2=&flexible_dates_v2=false&adults=1&children=0&infants=0&isMiles=true&advanced_air_search=false&stopover=false&sf=gs&langid=en&promocode=",
+      "primary": false
+    }
+  ],
+  "carriers": {
+    "LX": "SWISS",
+    "SN": "Brussels Airlines"
+  }
+}
