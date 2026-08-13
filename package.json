@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit",
     "seed": "tsx src/rag/ingest.ts",
     "record": "tsx scripts/record-fixtures.ts",
+    "ingest:airports": "tsx scripts/ingest-airports.ts",
     "eval": "tsx evals/run.ts",
     "prepare": "husky"
   },

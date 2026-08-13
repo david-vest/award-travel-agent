@@ -1,0 +1,310 @@
+{
+  "data": [
+    {
+      "ID": "3FBtM76EB3nA1506JQLkYFkuX8S",
+      "RouteID": "2vjKuhpDeG9r30DlzgHWpo38w3x",
+      "AvailabilityID": "32PDk5YCI1g4fPiRE8lvjAlyHUi",
+      "AvailabilitySegments": [
+        {
+          "ID": "3FBtM74evNtyrS1cCLspYFowfuX",
+          "RouteID": "2vjKuhpDeG9r30DlzgHWpo38w3x",
+          "AvailabilityID": "32PDk5YCI1g4fPiRE8lvjAlyHUi",
+          "AvailabilityTripID": "3FBtM76EB3nA1506JQLkYFkuX8S",
+          "FlightNumber": "QR726",
+          "Distance": 7128,
+          "Duration": 810,
+          "FareClass": "",
+          "AircraftName": "Airbus A350-1000",
+          "AircraftCode": "351",
+          "OriginAirport": "ORD",
+          "DestinationAirport": "DOH",
+          "DepartsAt": "2026-09-01T19:20:00Z",
+          "ArrivesAt": "2026-09-02T16:50:00Z",
+          "CreatedAt": "2026-06-15T21:50:38.891676Z",
+          "UpdatedAt": "2026-08-13T11:47:02.090982Z",
+          "Source": "qatar",
+          "Cabin": "economy",
+          "Order": 0
+        },
+        {
+          "ID": "3FBtM182HVoLy9koeX79R14CTNQ",
+          "RouteID": "2vjKuhpDeG9r30DlzgHWpo38w3x",
+          "AvailabilityID": "32PDk5YCI1g4fPiRE8lvjAlyHUi",
+          "AvailabilityTripID": "3FBtM76EB3nA1506JQLkYFkuX8S",
+          "FlightNumber": "QR41",
+          "Distance": 3091,
+          "Duration": 410,
+          "FareClass": "",
+          "AircraftName": "Airbus A380-800",
+          "AircraftCode": "388",
+          "OriginAirport": "DOH",
+          "DestinationAirport": "CDG",
+          "DepartsAt": "2026-09-03T01:25:00Z",
+          "ArrivesAt": "2026-09-03T07:15:00Z",
+          "CreatedAt": "2026-06-15T21:50:38.891676Z",
+          "UpdatedAt": "2026-08-13T11:47:02.090982Z",
+          "Source": "qatar",
+          "Cabin": "economy",
+          "Order": 1
+        }
+      ],
+      "TotalDuration": 1735,
+      "Stops": 1,
+      "Carriers": "QR",
+      "RemainingSeats": 9,
+      "MileageCost": 90000,
+      "TotalTaxes": 0,
+      "TotalSegmentDistance": 10219,
+      "OriginAirport": "ORD",
+      "DestinationAirport": "CDG",
+      "Connections": [
+        "DOH"
+      ],
+      "Aircraft": [
+        "Airbus A350-1000",
+        "Airbus A380-800"
+      ],
+      "FlightNumbers": "QR726, QR41",
+      "DepartsAt": "2026-09-01T19:20:00Z",
+      "Cabin": "economy",
+      "ArrivesAt": "2026-09-03T07:15:00Z",
+      "CreatedAt": "2026-06-15T21:50:38.891676Z",
+      "UpdatedAt": "2026-08-13T11:47:02.090982Z",
+      "Source": "qatar"
+    },
+    {
+      "ID": "3HrMEWSr8amvzy9vAa5eRv8seEe",
+      "RouteID": "2vjKuhpDeG9r30DlzgHWpo38w3x",
+      "AvailabilityID": "32PDk5YCI1g4fPiRE8lvjAlyHUi",
+      "AvailabilitySegments": [
+        {
+          "ID": "3HrMETbawJc37i7ThTJefWhCDH8",
+          "RouteID": "2vjKuhpDeG9r30DlzgHWpo38w3x",
+          "AvailabilityID": "32PDk5YCI1g4fPiRE8lvjAlyHUi",
+          "AvailabilityTripID": "3HrMEWSr8amvzy9vAa5eRv8seEe",
+          "FlightNumber": "QR726",
+          "Distance": 7128,
+          "Duration": 810,
+          "FareClass": "",
+          "AircraftName": "Airbus A350-1000",
+          "AircraftCode": "351",
+          "OriginAirport": "ORD",
+          "DestinationAirport": "DOH",
+          "DepartsAt": "2026-09-01T19:20:00Z",
+          "ArrivesAt": "2026-09-02T16:50:00Z",
+          "CreatedAt": "2026-08-13T11:47:02.090982Z",
+          "UpdatedAt": "2026-08-13T11:47:02.090982Z",
+          "Source": "qatar",
+          "Cabin": "business",
+          "Order": 0
+        },
+        {
+          "ID": "3HrMEY1tTVYgLwh3De5vD1GQEXc",
+          "RouteID": "2vjKuhpDeG9r30DlzgHWpo38w3x",
+          "AvailabilityID": "32PDk5YCI1g4fPiRE8lvjAlyHUi",
+          "AvailabilityTripID": "3HrMEWSr8amvzy9vAa5eRv8seEe",
+          "FlightNumber": "QR41",
+          "Distance": 3091,
+          "Duration": 410,
+          "FareClass": "",
+          "AircraftName": "Airbus A380-800",
+          "AircraftCode": "388",
+          "OriginAirport": "DOH",
+          "DestinationAirport": "CDG",
+          "DepartsAt": "2026-09-03T01:25:00Z",
+          "ArrivesAt": "2026-09-03T07:15:00Z",
+          "CreatedAt": "2026-08-13T11:47:02.090982Z",
+          "UpdatedAt": "2026-08-13T11:47:02.090982Z",
+          "Source": "qatar",
+          "Cabin": "business",
+          "Order": 1
+        }
+      ],
+      "TotalDuration": 1735,
+      "Stops": 1,
+      "Carriers": "QR",
+      "RemainingSeats": 1,
+      "MileageCost": 180000,
+      "TotalTaxes": 0,
+      "TotalSegmentDistance": 10219,
+      "OriginAirport": "ORD",
+      "DestinationAirport": "CDG",
+      "Connections": [
+        "DOH"
+      ],
+      "Aircraft": [
+        "Airbus A350-1000",
+        "Airbus A380-800"
+      ],
+      "FlightNumbers": "QR726, QR41",
+      "DepartsAt": "2026-09-01T19:20:00Z",
+      "Cabin": "business",
+      "ArrivesAt": "2026-09-03T07:15:00Z",
+      "CreatedAt": "2026-08-13T11:47:02.090982Z",
+      "UpdatedAt": "2026-08-13T11:47:02.090982Z",
+      "Source": "qatar"
+    },
+    {
+      "ID": "3HrMEVY1LjuQXMt8vRlr04tKXRm",
+      "RouteID": "2vjKuhpDeG9r30DlzgHWpo38w3x",
+      "AvailabilityID": "32PDk5YCI1g4fPiRE8lvjAlyHUi",
+      "AvailabilitySegments": [
+        {
+          "ID": "3HrMEVU670f4mysiWDsbdV3JKIm",
+          "RouteID": "2vjKuhpDeG9r30DlzgHWpo38w3x",
+          "AvailabilityID": "32PDk5YCI1g4fPiRE8lvjAlyHUi",
+          "AvailabilityTripID": "3HrMEVY1LjuQXMt8vRlr04tKXRm",
+          "FlightNumber": "QR726",
+          "Distance": 7128,
+          "Duration": 810,
+          "FareClass": "",
+          "AircraftName": "Airbus A350-1000",
+          "AircraftCode": "351",
+          "OriginAirport": "ORD",
+          "DestinationAirport": "DOH",
+          "DepartsAt": "2026-09-01T19:20:00Z",
+          "ArrivesAt": "2026-09-02T16:50:00Z",
+          "CreatedAt": "2026-08-13T11:47:02.090982Z",
+          "UpdatedAt": "2026-08-13T11:47:02.090982Z",
+          "Source": "qatar",
+          "Cabin": "business",
+          "Order": 0
+        },
+        {
+          "ID": "3HrMERQJwhyOaZKpULXe6ea2moI",
+          "RouteID": "2vjKuhpDeG9r30DlzgHWpo38w3x",
+          "AvailabilityID": "32PDk5YCI1g4fPiRE8lvjAlyHUi",
+          "AvailabilityTripID": "3HrMEVY1LjuQXMt8vRlr04tKXRm",
+          "FlightNumber": "QR39",
+          "Distance": 3091,
+          "Duration": 410,
+          "FareClass": "",
+          "AircraftName": "Airbus A380-800",
+          "AircraftCode": "388",
+          "OriginAirport": "DOH",
+          "DestinationAirport": "CDG",
+          "DepartsAt": "2026-09-03T08:35:00Z",
+          "ArrivesAt": "2026-09-03T14:25:00Z",
+          "CreatedAt": "2026-08-13T11:47:02.090982Z",
+          "UpdatedAt": "2026-08-13T11:47:02.090982Z",
+          "Source": "qatar",
+          "Cabin": "business",
+          "Order": 1
+        }
+      ],
+      "TotalDuration": 2165,
+      "Stops": 1,
+      "Carriers": "QR",
+      "RemainingSeats": 1,
+      "MileageCost": 180000,
+      "TotalTaxes": 0,
+      "TotalSegmentDistance": 10219,
+      "OriginAirport": "ORD",
+      "DestinationAirport": "CDG",
+      "Connections": [
+        "DOH"
+      ],
+      "Aircraft": [
+        "Airbus A350-1000",
+        "Airbus A380-800"
+      ],
+      "FlightNumbers": "QR726, QR39",
+      "DepartsAt": "2026-09-01T19:20:00Z",
+      "Cabin": "business",
+      "ArrivesAt": "2026-09-03T14:25:00Z",
+      "CreatedAt": "2026-08-13T11:47:02.090982Z",
+      "UpdatedAt": "2026-08-13T11:47:02.090982Z",
+      "Source": "qatar"
+    },
+    {
+      "ID": "39CeNEKaxqtTtXqZVJQGYLTrTmm",
+      "RouteID": "2vjKuhpDeG9r30DlzgHWpo38w3x",
+      "AvailabilityID": "32PDk5YCI1g4fPiRE8lvjAlyHUi",
+      "AvailabilitySegments": [
+        {
+          "ID": "39CeNCSiQxp4bLs8ZBTAsKEropc",
+          "RouteID": "2vjKuhpDeG9r30DlzgHWpo38w3x",
+          "AvailabilityID": "32PDk5YCI1g4fPiRE8lvjAlyHUi",
+          "AvailabilityTripID": "39CeNEKaxqtTtXqZVJQGYLTrTmm",
+          "FlightNumber": "QR726",
+          "Distance": 7128,
+          "Duration": 810,
+          "FareClass": "",
+          "AircraftName": "Airbus A350-1000",
+          "AircraftCode": "351",
+          "OriginAirport": "ORD",
+          "DestinationAirport": "DOH",
+          "DepartsAt": "2026-09-01T19:20:00Z",
+          "ArrivesAt": "2026-09-02T16:50:00Z",
+          "CreatedAt": "2026-02-04T11:27:17.082588Z",
+          "UpdatedAt": "2026-08-13T11:47:02.090982Z",
+          "Source": "qatar",
+          "Cabin": "economy",
+          "Order": 0
+        },
+        {
+          "ID": "39CeNEvt5juxe07pEI2iogDEIvb",
+          "RouteID": "2vjKuhpDeG9r30DlzgHWpo38w3x",
+          "AvailabilityID": "32PDk5YCI1g4fPiRE8lvjAlyHUi",
+          "AvailabilityTripID": "39CeNEKaxqtTtXqZVJQGYLTrTmm",
+          "FlightNumber": "QR39",
+          "Distance": 3091,
+          "Duration": 410,
+          "FareClass": "",
+          "AircraftName": "Airbus A380-800",
+          "AircraftCode": "388",
+          "OriginAirport": "DOH",
+          "DestinationAirport": "CDG",
+          "DepartsAt": "2026-09-03T08:35:00Z",
+          "ArrivesAt": "2026-09-03T14:25:00Z",
+          "CreatedAt": "2026-02-04T11:27:17.082588Z",
+          "UpdatedAt": "2026-08-13T11:47:02.090982Z",
+          "Source": "qatar",
+          "Cabin": "economy",
+          "Order": 1
+        }
+      ],
+      "TotalDuration": 2165,
+      "Stops": 1,
+      "Carriers": "QR",
+      "RemainingSeats": 9,
+      "MileageCost": 90000,
+      "TotalTaxes": 0,
+      "TotalSegmentDistance": 10219,
+      "OriginAirport": "ORD",
+      "DestinationAirport": "CDG",
+      "Connections": [
+        "DOH"
+      ],
+      "Aircraft": [
+        "Airbus A350-1000",
+        "Airbus A380-800"
+      ],
+      "FlightNumbers": "QR726, QR39",
+      "DepartsAt": "2026-09-01T19:20:00Z",
+      "Cabin": "economy",
+      "ArrivesAt": "2026-09-03T14:25:00Z",
+      "CreatedAt": "2026-02-04T11:27:17.082588Z",
+      "UpdatedAt": "2026-08-13T11:47:02.090982Z",
+      "Source": "qatar"
+    }
+  ],
+  "origin_coordinates": {
+    "Lat": 41.976912,
+    "Lon": -87.904876
+  },
+  "destination_coordinates": {
+    "Lat": 49.003196,
+    "Lon": 2.567023
+  },
+  "booking_links": [
+    {
+      "label": "Book via Qatar Airways Privilege Club",
+      "link": "https://www.qatarairways.com/en/homepage.html?utm_source=seatsaero",
+      "primary": true
+    }
+  ],
+  "carriers": {
+    "QR": "Qatar Airways"
+  }
+}

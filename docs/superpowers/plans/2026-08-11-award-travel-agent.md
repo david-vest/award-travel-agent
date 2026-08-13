@@ -72,7 +72,8 @@ src/
 │  │  ├─ replay.ts            # ReplaySeatsAeroClient (fixtures)
 │  │  └─ response-cache.ts    # Mongo TTL cache wrapper
 │  ├─ locations/
-│  │  ├─ data.ts              # airport + region tables
+│  │  ├─ airports.generated.json  # ~6,000 IATA-coded airports, from OpenFlights (Task 2.0)
+│  │  ├─ data.ts              # AIRPORTS (generated) + MAJOR_HUBS + region/city alias tables
 │  │  └─ resolve.ts           # resolveLocation (deterministic, no LLM)
 │  ├─ search-awards.ts        # normalizeResults (no tools — see Task 2.2)
 │  ├─ trip-details.ts         # summarizeTrip + the one real tool: get_trip_details
@@ -98,6 +99,8 @@ knowledge/          # 5 markdown collections
 fixtures/seats-aero/
 evals/{datasets,evaluators,run.ts}
 scripts/record-fixtures.ts
+scripts/ingest-airports.ts    # dev-time: OpenFlights -> airports.generated.json (Task 2.0)
+scripts/country-region.ts     # static country name -> Region table, used by ingest-airports
 ```
 
 ---
@@ -1247,7 +1250,7 @@ git commit -m "feat(seats-aero): add client interface and live HTTP implementati
 - Produces:
   - `class ReplaySeatsAeroClient implements SeatsAeroClient` — constructor takes a fixture directory
   - `function createSeatsAeroClient(): SeatsAeroClient` — env-driven selection
-  - `function fixturePath(endpoint: string, params: Record<string, unknown>): string`
+  - `function fixtureFile(endpoint: string, params: Record<string, unknown>): string`
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1466,7 +1469,7 @@ git commit -m "feat(seats-aero): add replay client and env-driven client factory
 
 **Interfaces:**
 - Consumes: `SeatsAeroClient` from `./client`, `requestKey` from `./request-key`
-- Produces: `function withResponseCache(inner: SeatsAeroClient, store: CacheStore): SeatsAeroClient`, `interface CacheStore { get, set }`, `function mongoCacheStore(db: Db): CacheStore`
+- Produces: `function withResponseCache(inner: SeatsAeroClient, store: CacheStore): SeatsAeroClient`, `interface CacheStore { get, set }`, `async function mongoCacheStore(db: Db): Promise<CacheStore>`
 
 **Design note:** the cache is a decorator over the client interface, not a change to either implementation. That keeps caching testable with an in-memory store and means neither `live.ts` nor `replay.ts` grows a second responsibility. `refresh` deliberately bypasses the cache — its whole purpose is to defeat staleness.
 
@@ -1826,16 +1829,121 @@ git commit -m "feat(seats-aero): add fixture recording script with manifest"
 
 ---
 
+### Task 2.0: Airport dataset ingest script
+
+**Superseded design note (2026-08-13):** the original Task 2.1 shipped a 63-airport hand-typed table — enough to exercise the demo, but it silently fails "unknown" for the overwhelming majority of real airports (no Austin, no Prague, nothing outside the curated list). Investigated two alternatives before choosing this one: (a) seats.aero's own API — confirmed via their docs index that no airport/city/region reference endpoint exists at all; `/search` takes raw IATA codes only, and `/availability`'s only geography concept is the fixed 6-value continent enum this project's `Region` type already matches — nothing to harvest. (b) the sibling `aero-connections` project — it solves the identical problem by bundling a static ~7,900-row airport table (OpenFlights-shaped) plus a small hand-curated region/metro alias layer, matched deterministically (no fuzzy library, no live lookup). This task adopts that same shape, sourced properly: a one-time, manually-invoked ingest script pulls OpenFlights' `airports.dat` (public domain/ODbL, ~6,063 IATA-coded commercial airports after filtering) and writes it to a checked-in JSON file. The script is not run at build or request time — it's run once now, and again only if the dataset needs refreshing, exactly like `scripts/record-fixtures.ts`.
+
+**License note:** OpenFlights' airport data is licensed under the Open Database License (ODbL); using it requires acknowledging the source. `scripts/ingest-airports.ts` carries a header comment doing so, and the generated JSON file inherits the same attribution in a comment at its call site in `data.ts`.
+
+**Files:**
+- Create: `scripts/ingest-airports.ts`, `scripts/country-region.ts`
+- Test: `scripts/ingest-airports.test.ts`
+- Generates (checked in as a normal source file, not gitignored): `src/tools/locations/airports.generated.json`
+
+**Interfaces:**
+- Consumes: `Region` from `src/tools/seats-aero/types` (no network access from the test suite — see Step 1)
+- Produces:
+  - `scripts/country-region.ts`: `export const COUNTRY_TO_REGION: Record<string, Region>` — a static table mapping every country name that appears in OpenFlights' data to one of the six `Region` values. OpenFlights uses full country names ("United States", "United Kingdom", "Micronesia", "Congo (Kinshasa)"), not ISO codes — build this table by fetching the real file once during implementation and mapping every distinct `Country` value you find, using standard continent conventions. There will be on the order of 200 entries. This is static geography — it does not decay — so there is no ongoing-maintenance concern in keeping it hand-written.
+  - `scripts/ingest-airports.ts`:
+    - `type RawAirportRow = { name: string; city: string; country: string; iata: string | null }` (only the fields this project needs — no lat/lon/tz/altitude)
+    - `function parseAirportsDat(raw: string): RawAirportRow[]` — parses OpenFlights' quoted-CSV format (14 columns, no header; some quoted fields, like airport names, contain literal commas, so this must be a real CSV-row parser, not a naive `split(",")`)
+    - `function toAirport(row: RawAirportRow): Airport | null` — returns `null` for rows without a valid 3-letter IATA code (OpenFlights uses the literal string `\N` for missing values); on a valid row, looks up `row.country` in `COUNTRY_TO_REGION` and throws with a clear message (naming the unmapped country) if it's missing — never silently drops a row for a mapping gap
+    - `async function main(): Promise<void>` — fetches `https://raw.githubusercontent.com/jpatokal/openflights/master/data/airports.dat`, runs it through `parseAirportsDat` → `toAirport`, collects every row that mapped cleanly, sorts by `iata` for a stable diff, writes pretty-printed JSON to `src/tools/locations/airports.generated.json`, and logs total-parsed / total-with-IATA / total-written counts. If any row's country has no `COUNTRY_TO_REGION` entry, `main()` must collect *all* such countries (not just the first) and throw once, listing them all — the whole point is fixing the mapping in one pass, not one country at a time.
+
+- [ ] **Step 1: Write the failing test**
+
+Test only the pure functions (`parseAirportsDat`, `toAirport`) against small embedded fixture strings — never hit the network from the test suite, matching how `scripts/record-fixtures.ts` avoids live calls in tests.
+
+```ts
+// scripts/ingest-airports.test.ts
+import { describe, it, expect } from "vitest";
+import { parseAirportsDat, toAirport } from "./ingest-airports";
+
+const SAMPLE_DAT = [
+  `1,"Goroka Airport","Goroka","Papua New Guinea","GKA","AYGA",-6.08,145.39,5282,10,"U","Pacific/Port_Moresby","airport","OurAirports"`,
+  `2,"Some Heliport, Annex B","Nowhere","Freedonia","\\N","ZZZZ",0,0,0,0,"U",\\N,"heliport","OurAirports"`,
+  `3,"Charles de Gaulle Airport","Paris","France","CDG","LFPG",49.01,2.55,392,1,"E","Europe/Paris","airport","OurAirports"`,
+].join("\n");
+
+describe("parseAirportsDat", () => {
+  it("parses rows and preserves commas inside quoted fields", () => {
+    const rows = parseAirportsDat(SAMPLE_DAT);
+    expect(rows).toHaveLength(3);
+    expect(rows[1].name).toBe("Some Heliport, Annex B");
+  });
+
+  it("represents a missing IATA code as null, not the literal string", () => {
+    const rows = parseAirportsDat(SAMPLE_DAT);
+    expect(rows[1].iata).toBeNull();
+  });
+});
+
+describe("toAirport", () => {
+  it("maps a valid row to an Airport with the correct region", () => {
+    const rows = parseAirportsDat(SAMPLE_DAT);
+    const airport = toAirport(rows[0]);
+    expect(airport).toMatchObject({ iata: "GKA", city: "Goroka", region: "Oceania" });
+  });
+
+  it("returns null for a row with no IATA code", () => {
+    const rows = parseAirportsDat(SAMPLE_DAT);
+    expect(toAirport(rows[1])).toBeNull();
+  });
+
+  it("throws naming the country when it has no region mapping", () => {
+    const rows = parseAirportsDat(SAMPLE_DAT);
+    expect(() => toAirport(rows[2] /* France, if deliberately omitted from a test-only map */)).not.toThrow();
+    // Real coverage is enforced by COUNTRY_TO_REGION containing every OpenFlights country —
+    // this test just proves the throw-with-name behavior using a fixture-local unmapped country.
+  });
+});
+```
+
+(Adjust the throw test to actually exercise the unmapped-country path — e.g. by calling `toAirport` with a row whose country is deliberately not in `COUNTRY_TO_REGION`, and asserting the thrown message contains that country's name.)
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `npx vitest run scripts/ingest-airports.test.ts`
+Expected: FAIL — cannot resolve `./ingest-airports`.
+
+- [ ] **Step 3: Write `scripts/country-region.ts`**
+
+Fetch the real OpenFlights file once during implementation (`curl -sL https://raw.githubusercontent.com/jpatokal/openflights/master/data/airports.dat`), extract every distinct `Country` value, and map each to one of `"North America" | "South America" | "Africa" | "Asia" | "Europe" | "Oceania"`. Watch for OpenFlights' naming quirks — split/renamed countries (`"Congo (Brazzaville)"` vs `"Congo (Kinshasa)"`), territories grouped under their administering country, a handful of Pacific micro-states. Every one of them needs an entry; there is no fallback.
+
+- [ ] **Step 4: Write `scripts/ingest-airports.ts`**
+
+Implement `parseAirportsDat`, `toAirport`, and `main()` per the interfaces above. Add a header comment: `// Source: OpenFlights (https://openflights.org/data.php), licensed under ODbL. Regenerate with: npm run ingest:airports`.
+
+- [ ] **Step 5: Run tests to verify they pass**
+
+Run: `npx vitest run scripts/ingest-airports.test.ts`
+Expected: PASS.
+
+- [ ] **Step 6: Wire the npm script and generate the real file**
+
+Add to `package.json`: `"ingest:airports": "tsx scripts/ingest-airports.ts"` (matches the existing `"record"` / `"seed"` convention).
+
+Run: `npm run ingest:airports`
+Expected: `src/tools/locations/airports.generated.json` is created with roughly 6,000 entries; the script logs its parsed/filtered/written counts and exits 0 with no unmapped-country error.
+
+- [ ] **Step 7: Stage**
+
+```bash
+git add scripts/ingest-airports.ts scripts/country-region.ts scripts/ingest-airports.test.ts src/tools/locations/airports.generated.json package.json
+```
+
+---
+
 ### Task 2.1: Location data and deterministic resolver
 
 **Files:**
-- Create: `src/tools/locations/data.ts`, `src/tools/locations/resolve.ts`
-- Test: `src/tools/locations/resolve.test.ts`
+- Modify: `src/tools/locations/data.ts`, `src/tools/locations/resolve.ts`
+- Modify: `src/tools/locations/resolve.test.ts`
 
 **Interfaces:**
-- Consumes: `Region`, `REGIONS` from `src/tools/seats-aero/types`
+- Consumes: `Region` from `src/tools/seats-aero/types`; `src/tools/locations/airports.generated.json` (from Task 2.0)
 - Produces:
-  - `type ResolvedLocation = { kind: "airports"; iatas: string[]; label: string } | { kind: "region"; region: Region; representativeIatas: string[]; label: string } | { kind: "unknown"; query: string }`
+  - `type ResolvedLocation = { kind: "airports"; iatas: string[]; label: string } | { kind: "region"; region: Region; representativeIatas: string[]; label: string } | { kind: "ambiguous"; query: string; candidates: string[] } | { kind: "unknown"; query: string }`
   - `function resolveLocation(query: string): ResolvedLocation`
 
 - [ ] **Step 1: Write the failing test**
@@ -1864,17 +1972,50 @@ describe("resolveLocation", () => {
     expect(r).toMatchObject({ kind: "airports", iatas: ["NRT"] });
   });
 
-  it("resolves a continent to a region plus representative airports", () => {
+  it("resolves airports the old curated table did not cover", () => {
+    const austin = resolveLocation("AUS");
+    expect(austin).toMatchObject({ kind: "airports", iatas: ["AUS"] });
+    const prague = resolveLocation("Prague");
+    expect(prague.kind).toBe("airports");
+    if (prague.kind !== "airports") return;
+    expect(prague.iatas).toContain("PRG");
+  });
+
+  it("resolves a continent to a region plus representative MAJOR_HUBS airports", () => {
     const r = resolveLocation("Asia");
     expect(r.kind).toBe("region");
     if (r.kind !== "region") return;
     expect(r.region).toBe("Asia");
     expect(r.representativeIatas.length).toBeGreaterThan(3);
+    // must be real hubs, not whatever the full ~6,000-row table happens to sort first
+    expect(r.representativeIatas).toEqual(
+      expect.arrayContaining([expect.stringMatching(/^(NRT|HND|SIN|ICN|HKG)$/)]),
+    );
   });
 
   it("resolves a known region synonym", () => {
     const r = resolveLocation("Europe");
     expect(r).toMatchObject({ kind: "region", region: "Europe" });
+  });
+
+  it("resolves an unambiguous partial city match", () => {
+    const r = resolveLocation("Reykjav"); // Reykjavik — one city, no exact-match hit
+    expect(r.kind).toBe("airports");
+  });
+
+  it("returns ambiguous, not a guess, when a partial match spans multiple cities", () => {
+    // "Santa" (not "San") deliberately avoids the 3-letter bare-IATA branch —
+    // "San" happens to also be SAN, San Diego's real code, which would resolve
+    // directly there and never reach this fallback tier at all.
+    const r = resolveLocation("Santa"); // Santa Ana, Santa Barbara, Santa Cruz, ...
+    expect(r.kind).toBe("ambiguous");
+    if (r.kind !== "ambiguous") return;
+    expect(r.candidates.length).toBeGreaterThan(1);
+  });
+
+  it("still resolves a lowercase-typed IATA code (SAN is a real airport, not just a city prefix)", () => {
+    const r = resolveLocation("san");
+    expect(r).toMatchObject({ kind: "airports", iatas: ["SAN"] });
   });
 
   it("returns unknown rather than guessing", () => {
@@ -1892,15 +2033,16 @@ describe("resolveLocation", () => {
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run src/tools/locations/resolve.test.ts`
-Expected: FAIL — cannot resolve `./resolve`.
+Expected: FAIL against the current (pre-rewrite) `data.ts`/`resolve.ts` — the new tests reference behavior (full dataset coverage, `ambiguous`) that doesn't exist yet.
 
-- [ ] **Step 3: Write `data.ts`**
+- [ ] **Step 3: Rewrite `data.ts`**
 
-Keep this small and hand-curated. It covers the hubs the demo exercises, not the world — an incomplete table that says "unknown" honestly beats a large one that guesses.
+The full dataset becomes the lookup table; the old hand-typed list becomes a curated subset used *only* to pick sensible region representatives (the generated table has no notion of airport size or traffic — sampling it directly for "Asia" would surface whatever small regional strip happens to sort first, not real hubs).
 
 ```ts
 // src/tools/locations/data.ts
 import type { Region } from "../seats-aero/types";
+import generatedAirports from "./airports.generated.json";
 
 export type Airport = {
   iata: string;
@@ -1909,58 +2051,46 @@ export type Airport = {
   region: Region;
 };
 
-/** Curated set — US origins plus common award destinations. */
-export const AIRPORTS: readonly Airport[] = [
+/**
+ * ~6,000 IATA-coded commercial airports, generated by `npm run ingest:airports`
+ * from OpenFlights (https://openflights.org/data.php, ODbL — source acknowledged
+ * per license terms). Do not hand-edit; regenerate via the script instead.
+ */
+export const AIRPORTS: readonly Airport[] = generatedAirports as Airport[];
+
+/**
+ * Small hand-curated subset of major hubs, used only to pick sensible
+ * representative airports for a region search (Task 2.1 Step 4) — the full
+ * generated AIRPORTS table above carries no size/traffic signal.
+ */
+export const MAJOR_HUBS: readonly Airport[] = [
   // North America
   { iata: "ORD", city: "Chicago", country: "US", region: "North America" },
-  { iata: "MDW", city: "Chicago", country: "US", region: "North America" },
   { iata: "JFK", city: "New York", country: "US", region: "North America" },
-  { iata: "EWR", city: "New York", country: "US", region: "North America" },
-  { iata: "LGA", city: "New York", country: "US", region: "North America" },
   { iata: "LAX", city: "Los Angeles", country: "US", region: "North America" },
   { iata: "SFO", city: "San Francisco", country: "US", region: "North America" },
-  { iata: "SEA", city: "Seattle", country: "US", region: "North America" },
   { iata: "DFW", city: "Dallas", country: "US", region: "North America" },
-  { iata: "MIA", city: "Miami", country: "US", region: "North America" },
-  { iata: "BOS", city: "Boston", country: "US", region: "North America" },
-  { iata: "IAD", city: "Washington", country: "US", region: "North America" },
-  { iata: "DCA", city: "Washington", country: "US", region: "North America" },
   { iata: "ATL", city: "Atlanta", country: "US", region: "North America" },
-  { iata: "DEN", city: "Denver", country: "US", region: "North America" },
   { iata: "YYZ", city: "Toronto", country: "CA", region: "North America" },
-  { iata: "YVR", city: "Vancouver", country: "CA", region: "North America" },
   { iata: "MEX", city: "Mexico City", country: "MX", region: "North America" },
-  { iata: "CUN", city: "Cancun", country: "MX", region: "North America" },
 
   // Europe
   { iata: "LHR", city: "London", country: "GB", region: "Europe" },
-  { iata: "LGW", city: "London", country: "GB", region: "Europe" },
   { iata: "CDG", city: "Paris", country: "FR", region: "Europe" },
   { iata: "FRA", city: "Frankfurt", country: "DE", region: "Europe" },
-  { iata: "MUC", city: "Munich", country: "DE", region: "Europe" },
   { iata: "AMS", city: "Amsterdam", country: "NL", region: "Europe" },
   { iata: "MAD", city: "Madrid", country: "ES", region: "Europe" },
-  { iata: "BCN", city: "Barcelona", country: "ES", region: "Europe" },
   { iata: "FCO", city: "Rome", country: "IT", region: "Europe" },
-  { iata: "LIS", city: "Lisbon", country: "PT", region: "Europe" },
-  { iata: "ZRH", city: "Zurich", country: "CH", region: "Europe" },
   { iata: "IST", city: "Istanbul", country: "TR", region: "Europe" },
-  { iata: "CPH", city: "Copenhagen", country: "DK", region: "Europe" },
-  { iata: "DUB", city: "Dublin", country: "IE", region: "Europe" },
 
   // Asia
   { iata: "NRT", city: "Tokyo", country: "JP", region: "Asia" },
   { iata: "HND", city: "Tokyo", country: "JP", region: "Asia" },
-  { iata: "KIX", city: "Osaka", country: "JP", region: "Asia" },
   { iata: "ICN", city: "Seoul", country: "KR", region: "Asia" },
   { iata: "PVG", city: "Shanghai", country: "CN", region: "Asia" },
-  { iata: "PEK", city: "Beijing", country: "CN", region: "Asia" },
   { iata: "HKG", city: "Hong Kong", country: "HK", region: "Asia" },
   { iata: "SIN", city: "Singapore", country: "SG", region: "Asia" },
   { iata: "BKK", city: "Bangkok", country: "TH", region: "Asia" },
-  { iata: "TPE", city: "Taipei", country: "TW", region: "Asia" },
-  { iata: "DEL", city: "Delhi", country: "IN", region: "Asia" },
-  { iata: "BOM", city: "Mumbai", country: "IN", region: "Asia" },
   { iata: "DXB", city: "Dubai", country: "AE", region: "Asia" },
   { iata: "DOH", city: "Doha", country: "QA", region: "Asia" },
 
@@ -1968,7 +2098,6 @@ export const AIRPORTS: readonly Airport[] = [
   { iata: "SYD", city: "Sydney", country: "AU", region: "Oceania" },
   { iata: "MEL", city: "Melbourne", country: "AU", region: "Oceania" },
   { iata: "AKL", city: "Auckland", country: "NZ", region: "Oceania" },
-  { iata: "NAN", city: "Nadi", country: "FJ", region: "Oceania" },
 
   // South America
   { iata: "GRU", city: "Sao Paulo", country: "BR", region: "South America" },
@@ -1979,7 +2108,6 @@ export const AIRPORTS: readonly Airport[] = [
 
   // Africa
   { iata: "JNB", city: "Johannesburg", country: "ZA", region: "Africa" },
-  { iata: "CPT", city: "Cape Town", country: "ZA", region: "Africa" },
   { iata: "CAI", city: "Cairo", country: "EG", region: "Africa" },
   { iata: "NBO", city: "Nairobi", country: "KE", region: "Africa" },
   { iata: "ADD", city: "Addis Ababa", country: "ET", region: "Africa" },
@@ -2017,17 +2145,17 @@ export const CITY_ALIASES: Record<string, string> = {
   dc: "washington",
   "washington dc": "washington",
   cdmx: "mexico city",
-  tokyo: "tokyo",
-  "sao paulo": "sao paulo",
 };
 ```
 
-- [ ] **Step 4: Write `resolve.ts`**
+(`tokyo`/`sao paulo` self-mapping entries dropped from `CITY_ALIASES` — the generated dataset's own `city` field already matches those spellings exactly, so the alias was always a no-op; see Task 2.1's original review note.)
+
+- [ ] **Step 4: Rewrite `resolve.ts`**
 
 ```ts
 // src/tools/locations/resolve.ts
 import type { Region } from "../seats-aero/types";
-import { AIRPORTS, CITY_ALIASES, REGION_SYNONYMS } from "./data";
+import { AIRPORTS, CITY_ALIASES, MAJOR_HUBS, REGION_SYNONYMS } from "./data";
 
 export type ResolvedLocation =
   | { kind: "airports"; iatas: string[]; label: string }
@@ -2037,17 +2165,32 @@ export type ResolvedLocation =
       representativeIatas: string[];
       label: string;
     }
+  | { kind: "ambiguous"; query: string; candidates: string[] }
   | { kind: "unknown"; query: string };
 
 /** How many airports stand in for a region on a cached-search call. */
 const REPRESENTATIVES_PER_REGION = 8;
+
+/** Below this length, a substring match is too broad to be useful (matches almost everything). */
+const MIN_SUBSTRING_LENGTH = 3;
 
 const byIata = new Map(AIRPORTS.map((a) => [a.iata, a]));
 
 /**
  * Deterministic. There is no model call here on purpose: an LLM asked for IATA
  * codes will confidently produce ones that do not exist, and a hallucinated
- * airport becomes a silent empty search rather than an error.
+ * airport becomes a silent empty search rather than an error. The same
+ * principle is why an ambiguous partial match returns the honest list of
+ * candidates instead of picking one — a table that can't decide says so.
+ *
+ * Note: a 3-letter query that matches a real IATA code resolves to that
+ * airport first, even if it also happens to be a city-name prefix (e.g. "San"
+ * is SAN, San Diego's real code) — codes are matched case-insensitively,
+ * since users commonly type them lowercase ("lax", "nrt"), and that
+ * convenience is worth more than catching the rare case where a 3-letter code
+ * coincides with an ambiguous city prefix. Longer queries (5+ letters, like
+ * "Santa") never collide with a 3-letter code and go straight to city
+ * matching, where genuine ambiguity is caught.
  */
 export function resolveLocation(query: string): ResolvedLocation {
   const raw = query.trim();
@@ -2061,24 +2204,38 @@ export function resolveLocation(query: string): ResolvedLocation {
     }
   }
 
-  // Region synonym
+  // Region synonym — representatives come from the curated MAJOR_HUBS list,
+  // not the full generated table, so they're real hubs rather than dataset order.
   const region = REGION_SYNONYMS[key];
   if (region) {
-    const representativeIatas = AIRPORTS.filter((a) => a.region === region)
+    const representativeIatas = MAJOR_HUBS.filter((a) => a.region === region)
       .slice(0, REPRESENTATIVES_PER_REGION)
       .map((a) => a.iata);
     return { kind: "region", region, representativeIatas, label: region };
   }
 
-  // City (possibly via alias)
+  // City (possibly via alias) — exact match first
   const cityKey = CITY_ALIASES[key] ?? key;
-  const matches = AIRPORTS.filter((a) => a.city.toLowerCase() === cityKey);
-  if (matches.length > 0) {
+  const exact = AIRPORTS.filter((a) => a.city.toLowerCase() === cityKey);
+  if (exact.length > 0) {
     return {
       kind: "airports",
-      iatas: matches.map((a) => a.iata),
-      label: matches[0].city,
+      iatas: exact.map((a) => a.iata),
+      label: exact[0].city,
     };
+  }
+
+  // Partial match fallback — only for queries long enough to be meaningful
+  if (cityKey.length >= MIN_SUBSTRING_LENGTH) {
+    const partial = AIRPORTS.filter((a) => a.city.toLowerCase().includes(cityKey));
+    const distinctCities = [...new Set(partial.map((a) => a.city))];
+    if (distinctCities.length === 1) {
+      const iatas = partial.map((a) => a.iata);
+      return { kind: "airports", iatas, label: distinctCities[0] };
+    }
+    if (distinctCities.length > 1) {
+      return { kind: "ambiguous", query: raw, candidates: distinctCities.sort() };
+    }
   }
 
   return { kind: "unknown", query: raw };
@@ -2095,13 +2252,12 @@ export function toAirportParam(r: ResolvedLocation): string | undefined {
 - [ ] **Step 5: Run tests to verify they pass**
 
 Run: `npx vitest run src/tools/locations/resolve.test.ts`
-Expected: PASS (7 tests).
+Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 6: Stage**
 
 ```bash
-git add src/tools/locations/
-git commit -m "feat(tools): add deterministic location resolver with curated airport table"
+git add src/tools/locations/data.ts src/tools/locations/resolve.ts src/tools/locations/resolve.test.ts
 ```
 
 ---
@@ -2294,7 +2450,7 @@ git commit -m "feat(tools): add award result normalization"
 - Consumes: `SeatsAeroClient`, `Trip` from `src/tools/seats-aero`
 - Produces:
   - `function summarizeTrip(trip: Trip): TripSummary`
-  - `type TripSummary = { flightNumbers: string[]; aircraft: string[]; stops: number; carriers: string[]; departsAt?: string; arrivesAt?: string }`
+  - `type TripSummary = { tripId: string; flightNumbers: string[]; aircraft: string[]; carriers: string[]; stops: number; departsAt?: string; arrivesAt?: string }`
   - `function makeGetTripDetailsTool(client: SeatsAeroClient)` — LangChain `StructuredTool`, the one real tool in this codebase, bound to a model in Task 4.6's `enrich_trips`
 
 **Design note — why this is the one tool that's genuinely bound:** every other seats.aero call (Task 2.2) is graph-orchestrated because its call count needs a hard cap enforced in code — a model holding `search_award_availability` could call it without limit. `get_trip_details` is different: by the time it's offered, `enrich_trips` has already deterministically capped the candidate list at `ENRICH_TOP_N` (Task 4.6). Within that fixed, pre-capped list, "which of these five is actually worth the extra lookup" is a real judgment call — and the worst case if the model over-calls is five wasted lookups, not an unbounded bill. That's the shape of decision worth handing to the model: bounded blast radius, genuine judgment. `program-routes.ts` and `resolveLocationTool` from the original design are dropped — `client.routes()` stays in the Phase 1 data layer as a tested, documented capability, but nothing in the graph calls it, and no tool wrapper is built around it or around location resolution (Task 4.4/4.5 call `resolveLocation` directly as a plain function).
@@ -3077,16 +3233,18 @@ git commit -m "feat(rag): add Atlas vector store and knowledge base ingest"
 
 ### Task 3.3: Metadata-prefiltered retriever
 
+**Flagged by the Phase 2 broad review, carried forward here:** the graph's edge order (`search_awards` → `enrich_trips` → `retrieve_knowledge`, see Task 4.8) means `state.tripSummaries` — including aircraft type — is already populated by the time retrieval runs. The `products` KB collection (cabin reviews, e.g. "ANA 777 Room" vs. "Lufthansa A340 2-2-2") is specifically keyed by aircraft. When implementing `buildRetrievalQuery`/`buildPreFilter` below, accept `TripSummary[]` alongside `AwardOption[]` and fold aircraft names into both the embedded query text and the `aircraft` metadata filter — otherwise the products collection's whole reason for existing (matching a review to the *specific* plane a traveler would actually board) never actually triggers, and Task 4.7's `retrieveKnowledgeNode` should pass `state.tripSummaries` through accordingly.
+
 **Files:**
 - Create: `src/rag/retriever.ts`
 - Test: `src/rag/retriever.test.ts`
 
 **Interfaces:**
-- Consumes: `getVectorStore` from `./store`, `AwardOption` from `src/tools`
+- Consumes: `getVectorStore` from `./store`, `AwardOption`, `TripSummary` from `src/tools`
 - Produces:
-  - `function buildRetrievalQuery(userQuestion: string, options: AwardOption[]): string`
-  - `function buildPreFilter(options: AwardOption[]): Record<string, unknown> | undefined`
-  - `async function retrieveKnowledge(userQuestion, options, k?): Promise<RetrievedDoc[]>`
+  - `function buildRetrievalQuery(userQuestion: string, options: AwardOption[], trips?: TripSummary[]): string`
+  - `function buildPreFilter(options: AwardOption[], trips?: TripSummary[]): Record<string, unknown> | undefined`
+  - `async function retrieveKnowledge(userQuestion, options, trips?, k?): Promise<RetrievedDoc[]>`
   - `type RetrievedDoc = { id: string; collection: string; text: string; sources: string[]; updated: string }`
 
 - [ ] **Step 1: Write the failing test**
@@ -3931,6 +4089,8 @@ git commit -m "feat(agent): add input guard and intent triage nodes"
 ---
 
 ### Task 4.4: Search planner
+
+**Flagged by the Phase 2 broad review, carried forward here:** `resolveLocation`'s non-`"airports"`/`"region"` results are currently silently discarded by `expand()` (below) — an unrecognized or ambiguous place just contributes nothing to `origins`/`destinations`, producing a quietly empty search with no user-visible signal. This now covers two distinct cases (Task 2.1's rewrite added the second): `{ kind: "unknown" }` (nothing matched at all) and `{ kind: "ambiguous", candidates }` (multiple cities matched a partial query — e.g. "San" — and the resolver correctly refused to guess which one). When implementing `expand()`, surface both back into the plan (e.g., a `SearchPlan.unresolvedPlaces?: string[]` field for unknowns, and a way to carry `ambiguous.candidates` through) so `synthesize` (Task 4.7) can tell the user "I didn't recognize X" or "did you mean San Francisco, San Diego, or San Jose?" instead of silently returning nothing.
 
 **Files:**
 - Create: `src/agent/prompts/plan-search.ts`, `src/agent/nodes/plan-search.ts`

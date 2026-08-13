@@ -1,0 +1,393 @@
+{
+  "data": [
+    {
+      "ID": "3HZxKmuN0ipEXra5JvYH387H2xz",
+      "RouteID": "3GeH5PL08s78vZbCBQULUmulAGR",
+      "AvailabilityID": "3GeIr7YAYVqxlX8su9xqs1IvraR",
+      "AvailabilitySegments": [
+        {
+          "ID": "3HZxKofV3Jr3TCtnqx8pFbH5En6",
+          "RouteID": "3GeH5PL08s78vZbCBQULUmulAGR",
+          "AvailabilityID": "3GeIr7YAYVqxlX8su9xqs1IvraR",
+          "AvailabilityTripID": "3HZxKmuN0ipEXra5JvYH387H2xz",
+          "FlightNumber": "JL55",
+          "Distance": 6266,
+          "Duration": 790,
+          "FareClass": "T",
+          "AircraftName": "Boeing 787-8",
+          "AircraftCode": "788",
+          "OriginAirport": "ORD",
+          "DestinationAirport": "NRT",
+          "DepartsAt": "2026-09-01T10:15:00Z",
+          "ArrivesAt": "2026-09-02T13:25:00Z",
+          "CreatedAt": "2026-08-07T07:55:30.387996Z",
+          "UpdatedAt": "2026-08-13T06:48:05.505384Z",
+          "Source": "flyingblue",
+          "Cabin": "economy",
+          "Order": 0
+        }
+      ],
+      "TotalDuration": 790,
+      "Stops": 0,
+      "Carriers": "JL",
+      "RemainingSeats": 9,
+      "MileageCost": 63000,
+      "TotalTaxes": 47850,
+      "TaxesCurrency": "USD",
+      "TotalSegmentDistance": 6266,
+      "OriginAirport": "ORD",
+      "DestinationAirport": "NRT",
+      "Aircraft": [
+        "Boeing 787-8"
+      ],
+      "FareClasses": [
+        "T"
+      ],
+      "FlightNumbers": "JL55",
+      "DepartsAt": "2026-09-01T10:15:00Z",
+      "Cabin": "economy",
+      "ArrivesAt": "2026-09-02T13:25:00Z",
+      "CreatedAt": "2026-08-07T07:55:30.387996Z",
+      "UpdatedAt": "2026-08-13T06:48:05.505384Z",
+      "Source": "flyingblue"
+    },
+    {
+      "ID": "3HdVVmxbzHgYiKOQtJ9lZEGFeeM",
+      "RouteID": "3GeH5PL08s78vZbCBQULUmulAGR",
+      "AvailabilityID": "3GeIr7YAYVqxlX8su9xqs1IvraR",
+      "AvailabilitySegments": [
+        {
+          "ID": "3HdVVxu3cej2wtFjvoiZq7kRKHB",
+          "RouteID": "3GeH5PL08s78vZbCBQULUmulAGR",
+          "AvailabilityID": "3GeIr7YAYVqxlX8su9xqs1IvraR",
+          "AvailabilityTripID": "3HdVVmxbzHgYiKOQtJ9lZEGFeeM",
+          "FlightNumber": "DL1556",
+          "Distance": 1743,
+          "Duration": 262,
+          "FareClass": "N",
+          "AircraftName": "Boeing 737-800",
+          "AircraftCode": "738",
+          "OriginAirport": "ORD",
+          "DestinationAirport": "LAX",
+          "DepartsAt": "2026-09-01T09:30:00Z",
+          "ArrivesAt": "2026-09-01T11:52:00Z",
+          "CreatedAt": "2026-08-08T14:05:58.997366Z",
+          "UpdatedAt": "2026-08-13T06:48:05.505384Z",
+          "Source": "flyingblue",
+          "Cabin": "economy",
+          "Order": 0
+        },
+        {
+          "ID": "3HdVVvOFmfjMVCiZMsEynrJ90Ov",
+          "RouteID": "3GeH5PL08s78vZbCBQULUmulAGR",
+          "AvailabilityID": "3GeIr7YAYVqxlX8su9xqs1IvraR",
+          "AvailabilityTripID": "3HdVVmxbzHgYiKOQtJ9lZEGFeeM",
+          "FlightNumber": "JL61",
+          "Distance": 5444,
+          "Duration": 660,
+          "FareClass": "T",
+          "AircraftName": "Boeing 787-9",
+          "AircraftCode": "789",
+          "OriginAirport": "LAX",
+          "DestinationAirport": "NRT",
+          "DepartsAt": "2026-09-01T13:30:00Z",
+          "ArrivesAt": "2026-09-02T16:30:00Z",
+          "CreatedAt": "2026-08-08T14:05:58.997366Z",
+          "UpdatedAt": "2026-08-13T06:48:05.505384Z",
+          "Source": "flyingblue",
+          "Cabin": "economy",
+          "Order": 1
+        }
+      ],
+      "TotalDuration": 1020,
+      "Stops": 1,
+      "Carriers": "DL, JL",
+      "RemainingSeats": 9,
+      "MileageCost": 79500,
+      "TotalTaxes": 48300,
+      "TaxesCurrency": "USD",
+      "TotalSegmentDistance": 7187,
+      "OriginAirport": "ORD",
+      "DestinationAirport": "NRT",
+      "Connections": [
+        "LAX"
+      ],
+      "Aircraft": [
+        "Boeing 737-800",
+        "Boeing 787-9"
+      ],
+      "FareClasses": [
+        "N",
+        "T"
+      ],
+      "FlightNumbers": "DL1556, JL61",
+      "DepartsAt": "2026-09-01T09:30:00Z",
+      "Cabin": "economy",
+      "ArrivesAt": "2026-09-02T16:30:00Z",
+      "CreatedAt": "2026-08-08T14:05:58.997366Z",
+      "UpdatedAt": "2026-08-13T06:48:05.505384Z",
+      "Source": "flyingblue"
+    },
+    {
+      "ID": "3HHkfyXDIwpMaKVBYAIsW6HGD8a",
+      "RouteID": "3GeH5PL08s78vZbCBQULUmulAGR",
+      "AvailabilityID": "3GeIr7YAYVqxlX8su9xqs1IvraR",
+      "AvailabilitySegments": [
+        {
+          "ID": "3HHkfwQkuNUdngXBmgIGZpAJz7Y",
+          "RouteID": "3GeH5PL08s78vZbCBQULUmulAGR",
+          "AvailabilityID": "3GeIr7YAYVqxlX8su9xqs1IvraR",
+          "AvailabilityTripID": "3HHkfyXDIwpMaKVBYAIsW6HGD8a",
+          "FlightNumber": "KL612",
+          "Distance": 4113,
+          "Duration": 460,
+          "FareClass": "O",
+          "AircraftName": "Boeing 787-10",
+          "AircraftCode": "781",
+          "OriginAirport": "ORD",
+          "DestinationAirport": "AMS",
+          "DepartsAt": "2026-09-01T16:15:00Z",
+          "ArrivesAt": "2026-09-02T06:55:00Z",
+          "CreatedAt": "2026-07-31T21:14:48.070873Z",
+          "UpdatedAt": "2026-08-13T06:48:05.505384Z",
+          "Source": "flyingblue",
+          "Cabin": "business",
+          "Order": 0
+        },
+        {
+          "ID": "3HHkfvgDYT8bwTvMZMN0UEa4uLr",
+          "RouteID": "3GeH5PL08s78vZbCBQULUmulAGR",
+          "AvailabilityID": "3GeIr7YAYVqxlX8su9xqs1IvraR",
+          "AvailabilityTripID": "3HHkfyXDIwpMaKVBYAIsW6HGD8a",
+          "FlightNumber": "KL861",
+          "Distance": 5796,
+          "Duration": 810,
+          "FareClass": "O",
+          "AircraftName": "Boeing 787-9",
+          "AircraftCode": "789",
+          "OriginAirport": "AMS",
+          "DestinationAirport": "NRT",
+          "DepartsAt": "2026-09-02T13:55:00Z",
+          "ArrivesAt": "2026-09-03T10:25:00Z",
+          "CreatedAt": "2026-07-31T21:14:48.070873Z",
+          "UpdatedAt": "2026-08-13T06:48:05.505384Z",
+          "Source": "flyingblue",
+          "Cabin": "business",
+          "Order": 1
+        }
+      ],
+      "TotalDuration": 1690,
+      "Stops": 1,
+      "Carriers": "KL, KL",
+      "RemainingSeats": 4,
+      "MileageCost": 115000,
+      "TotalTaxes": 71730,
+      "TaxesCurrency": "USD",
+      "TotalSegmentDistance": 9909,
+      "OriginAirport": "ORD",
+      "DestinationAirport": "NRT",
+      "Connections": [
+        "AMS"
+      ],
+      "Aircraft": [
+        "Boeing 787-10",
+        "Boeing 787-9"
+      ],
+      "FareClasses": [
+        "O",
+        "O"
+      ],
+      "FlightNumbers": "KL612, KL861",
+      "DepartsAt": "2026-09-01T16:15:00Z",
+      "Cabin": "business",
+      "ArrivesAt": "2026-09-03T10:25:00Z",
+      "CreatedAt": "2026-07-31T21:14:48.070873Z",
+      "UpdatedAt": "2026-08-13T06:48:05.505384Z",
+      "Source": "flyingblue"
+    },
+    {
+      "ID": "3HHkg0Vz0zRAoow8FcQc2zvjKdt",
+      "RouteID": "3GeH5PL08s78vZbCBQULUmulAGR",
+      "AvailabilityID": "3GeIr7YAYVqxlX8su9xqs1IvraR",
+      "AvailabilitySegments": [
+        {
+          "ID": "3HHkfwl1ea1m166Cy3riRjaG6p7",
+          "RouteID": "3GeH5PL08s78vZbCBQULUmulAGR",
+          "AvailabilityID": "3GeIr7YAYVqxlX8su9xqs1IvraR",
+          "AvailabilityTripID": "3HHkg0Vz0zRAoow8FcQc2zvjKdt",
+          "FlightNumber": "KL612",
+          "Distance": 4113,
+          "Duration": 460,
+          "FareClass": "G",
+          "AircraftName": "Boeing 787-10",
+          "AircraftCode": "781",
+          "OriginAirport": "ORD",
+          "DestinationAirport": "AMS",
+          "DepartsAt": "2026-09-01T16:15:00Z",
+          "ArrivesAt": "2026-09-02T06:55:00Z",
+          "CreatedAt": "2026-07-31T21:14:48.070873Z",
+          "UpdatedAt": "2026-08-13T06:48:05.505384Z",
+          "Source": "flyingblue",
+          "Cabin": "economy",
+          "Order": 0
+        },
+        {
+          "ID": "3HHkg1O9Bp0ZqlOQbattjerNzDp",
+          "RouteID": "3GeH5PL08s78vZbCBQULUmulAGR",
+          "AvailabilityID": "3GeIr7YAYVqxlX8su9xqs1IvraR",
+          "AvailabilityTripID": "3HHkg0Vz0zRAoow8FcQc2zvjKdt",
+          "FlightNumber": "KL861",
+          "Distance": 5796,
+          "Duration": 810,
+          "FareClass": "G",
+          "AircraftName": "Boeing 787-9",
+          "AircraftCode": "789",
+          "OriginAirport": "AMS",
+          "DestinationAirport": "NRT",
+          "DepartsAt": "2026-09-02T13:55:00Z",
+          "ArrivesAt": "2026-09-03T10:25:00Z",
+          "CreatedAt": "2026-07-31T21:14:48.070873Z",
+          "UpdatedAt": "2026-08-13T06:48:05.505384Z",
+          "Source": "flyingblue",
+          "Cabin": "economy",
+          "Order": 1
+        }
+      ],
+      "TotalDuration": 1690,
+      "Stops": 1,
+      "Carriers": "KL, KL",
+      "RemainingSeats": 1,
+      "MileageCost": 40000,
+      "TotalTaxes": 28189,
+      "TaxesCurrency": "USD",
+      "TotalSegmentDistance": 9909,
+      "OriginAirport": "ORD",
+      "DestinationAirport": "NRT",
+      "Connections": [
+        "AMS"
+      ],
+      "Aircraft": [
+        "Boeing 787-10",
+        "Boeing 787-9"
+      ],
+      "FareClasses": [
+        "G",
+        "G"
+      ],
+      "FlightNumbers": "KL612, KL861",
+      "DepartsAt": "2026-09-01T16:15:00Z",
+      "Cabin": "economy",
+      "ArrivesAt": "2026-09-03T10:25:00Z",
+      "CreatedAt": "2026-07-31T21:14:48.070873Z",
+      "UpdatedAt": "2026-08-13T06:48:05.505384Z",
+      "Source": "flyingblue"
+    },
+    {
+      "ID": "3HHkg0x7gHStozorZBYRCvzowA6",
+      "RouteID": "3GeH5PL08s78vZbCBQULUmulAGR",
+      "AvailabilityID": "3GeIr7YAYVqxlX8su9xqs1IvraR",
+      "AvailabilitySegments": [
+        {
+          "ID": "3HHkfvMQxnE0TwhUDADOQXj8oOP",
+          "RouteID": "3GeH5PL08s78vZbCBQULUmulAGR",
+          "AvailabilityID": "3GeIr7YAYVqxlX8su9xqs1IvraR",
+          "AvailabilityTripID": "3HHkg0x7gHStozorZBYRCvzowA6",
+          "FlightNumber": "KL612",
+          "Distance": 4113,
+          "Duration": 460,
+          "FareClass": "S",
+          "AircraftName": "Boeing 787-10",
+          "AircraftCode": "781",
+          "OriginAirport": "ORD",
+          "DestinationAirport": "AMS",
+          "DepartsAt": "2026-09-01T16:15:00Z",
+          "ArrivesAt": "2026-09-02T06:55:00Z",
+          "CreatedAt": "2026-07-31T21:14:48.070873Z",
+          "UpdatedAt": "2026-08-13T06:48:05.505384Z",
+          "Source": "flyingblue",
+          "Cabin": "premium",
+          "Order": 0
+        },
+        {
+          "ID": "3HHkg0o7mZbC6iBzueXI8bmWjnz",
+          "RouteID": "3GeH5PL08s78vZbCBQULUmulAGR",
+          "AvailabilityID": "3GeIr7YAYVqxlX8su9xqs1IvraR",
+          "AvailabilityTripID": "3HHkg0x7gHStozorZBYRCvzowA6",
+          "FlightNumber": "KL861",
+          "Distance": 5796,
+          "Duration": 810,
+          "FareClass": "S",
+          "AircraftName": "Boeing 787-9",
+          "AircraftCode": "789",
+          "OriginAirport": "AMS",
+          "DestinationAirport": "NRT",
+          "DepartsAt": "2026-09-02T13:55:00Z",
+          "ArrivesAt": "2026-09-03T10:25:00Z",
+          "CreatedAt": "2026-07-31T21:14:48.070873Z",
+          "UpdatedAt": "2026-08-13T06:48:05.505384Z",
+          "Source": "flyingblue",
+          "Cabin": "premium",
+          "Order": 1
+        }
+      ],
+      "TotalDuration": 1690,
+      "Stops": 1,
+      "Carriers": "KL, KL",
+      "RemainingSeats": 1,
+      "MileageCost": 184500,
+      "TotalTaxes": 47050,
+      "TaxesCurrency": "USD",
+      "TotalSegmentDistance": 9909,
+      "OriginAirport": "ORD",
+      "DestinationAirport": "NRT",
+      "Connections": [
+        "AMS"
+      ],
+      "Aircraft": [
+        "Boeing 787-10",
+        "Boeing 787-9"
+      ],
+      "FareClasses": [
+        "S",
+        "S"
+      ],
+      "FlightNumbers": "KL612, KL861",
+      "DepartsAt": "2026-09-01T16:15:00Z",
+      "Cabin": "premium",
+      "ArrivesAt": "2026-09-03T10:25:00Z",
+      "CreatedAt": "2026-07-31T21:14:48.070873Z",
+      "UpdatedAt": "2026-08-13T06:48:05.505384Z",
+      "Source": "flyingblue"
+    }
+  ],
+  "origin_coordinates": {
+    "Lat": 41.976912,
+    "Lon": -87.904876
+  },
+  "destination_coordinates": {
+    "Lat": 35.773213,
+    "Lon": 140.387443
+  },
+  "booking_links": [
+    {
+      "label": "Book via Air France/KLM Flying Blue",
+      "link": "https://wwws.airfrance.us/search/offers?activeConnection=0&bookingFlow=REWARD&cabinClass=ECONOMY&pax=1:0:0:0:0:0:0:0&connections=ORD%3AA%3A20260901%3ENRT%3AA&utm_source=seatsaero",
+      "primary": true
+    },
+    {
+      "label": "Book via Delta SkyMiles",
+      "link": "https://www.delta.com/flight-search/search?action=findFlights&searchByCabin=true&deltaOnlySearch=false&deltaOnly=off&go=Find%20Flights&tripType=ONE_WAY&passengerInfo=ADT:1&priceSchedule=price&awardTravel=true&originCity=ORD&destinationCity=NRT&departureDate=09/01/2026&returnDate=&forceMiles=true&utm_source=seatsaero",
+      "primary": false
+    },
+    {
+      "label": "Book via Virgin Atlantic",
+      "link": "https://www.virginatlantic.com/flight-search/search?action=findFlights&searchByCabin=true&deltaOnlySearch=false&deltaOnly=off&go=Find%20Flights&tripType=ONE_WAY&passengerInfo=ADT:1|GBE:0|CNN:0|INF:0&priceSchedule=price&awardTravel=true&originCity=ORD&destinationCity=NRT&departureDate=09/01/2026&returnDate=&forceMiles=true&utm_source=seatsaero",
+      "primary": false
+    }
+  ],
+  "carriers": {
+    "DL": "Delta",
+    "JL": "Japan Airlines",
+    "KL": "KLM"
+  }
+}
