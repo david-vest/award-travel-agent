@@ -3233,7 +3233,9 @@ git commit -m "feat(rag): add Atlas vector store and knowledge base ingest"
 
 ### Task 3.3: Metadata-prefiltered retriever
 
-**Flagged by the Phase 2 broad review, carried forward here:** the graph's edge order (`search_awards` → `enrich_trips` → `retrieve_knowledge`, see Task 4.8) means `state.tripSummaries` — including aircraft type — is already populated by the time retrieval runs. The `products` KB collection (cabin reviews, e.g. "ANA 777 Room" vs. "Lufthansa A340 2-2-2") is specifically keyed by aircraft. When implementing `buildRetrievalQuery`/`buildPreFilter` below, accept `TripSummary[]` alongside `AwardOption[]` and fold aircraft names into both the embedded query text and the `aircraft` metadata filter — otherwise the products collection's whole reason for existing (matching a review to the *specific* plane a traveler would actually board) never actually triggers, and Task 4.7's `retrieveKnowledgeNode` should pass `state.tripSummaries` through accordingly.
+**Flagged by the Phase 2 broad review, carried forward and refined here:** the graph's edge order (`search_awards` → `enrich_trips` → `retrieve_knowledge`, see Task 4.8) means `state.tripSummaries` — including aircraft type — is already populated by the time retrieval runs. The `products` KB collection (cabin reviews, e.g. "ANA 777 Room" vs. "Lufthansa A340 2-2-2") is specifically keyed by aircraft, so leaving it out means the products collection's whole reason for existing (matching a review to the *specific* plane a traveler would actually board) never triggers.
+
+**Design decision: fold aircraft into the embedded query text, not into the structural metadata filter.** The original framing of this note said "both" — that turns out to be the wrong call. `buildPreFilter`'s existing `airlines`/`programs` clauses are ANDed together (Atlas Vector Search filter semantics), and only the `products` collection ever tags an `aircraft` field — the other four collections (sweet-spots, transfers, booking, seasonality) always have `aircraft: []`. Adding `aircraft: { $in: [...] }` as another ANDed clause would exclude every one of those four collections outright whenever a trip has aircraft data, which is nearly always once `enrich_trips` has run — the opposite of what a knowledge-question retriever should do. Aircraft-name spelling also varies across sources ("777-300ER" vs "Boeing 777-300ER" vs "B77W"), which is exactly the kind of fuzzy match semantic similarity handles well and an exact `$in` filter handles badly. So: `buildRetrievalQuery` gains an `Aircraft: ...` line fed by `trips`, `buildPreFilter` is unchanged (no `trips` parameter), and `retrieveKnowledge` accepts `trips` only to forward it to `buildRetrievalQuery`. Task 4.7's `retrieveKnowledgeNode` passes `state.tripSummaries` through accordingly.
 
 **Files:**
 - Create: `src/rag/retriever.ts`
@@ -3243,8 +3245,8 @@ git commit -m "feat(rag): add Atlas vector store and knowledge base ingest"
 - Consumes: `getVectorStore` from `./store`, `AwardOption`, `TripSummary` from `src/tools`
 - Produces:
   - `function buildRetrievalQuery(userQuestion: string, options: AwardOption[], trips?: TripSummary[]): string`
-  - `function buildPreFilter(options: AwardOption[], trips?: TripSummary[]): Record<string, unknown> | undefined`
-  - `async function retrieveKnowledge(userQuestion, options, trips?, k?): Promise<RetrievedDoc[]>`
+  - `function buildPreFilter(options: AwardOption[]): Record<string, unknown> | undefined`
+  - `async function retrieveKnowledge(userQuestion: string, options: AwardOption[], trips?: TripSummary[], k?: number): Promise<RetrievedDoc[]>`
   - `type RetrievedDoc = { id: string; collection: string; text: string; sources: string[]; updated: string }`
 
 - [ ] **Step 1: Write the failing test**
@@ -3253,7 +3255,7 @@ git commit -m "feat(rag): add Atlas vector store and knowledge base ingest"
 // src/rag/retriever.test.ts
 import { describe, it, expect } from "vitest";
 import { buildPreFilter, buildRetrievalQuery } from "./retriever";
-import type { AwardOption } from "../tools";
+import type { AwardOption, TripSummary } from "../tools";
 
 const option = (over: Partial<AwardOption> = {}): AwardOption => ({
   availabilityId: "a1",
@@ -3314,6 +3316,28 @@ describe("buildRetrievalQuery", () => {
     const q = buildRetrievalQuery("options?", [option({ destination: "NRT" })]);
     expect(q).toContain("NRT");
   });
+
+  it("folds trip aircraft into the query so products reviews can match the specific plane", () => {
+    const trip: TripSummary = {
+      availabilityId: "a1",
+      tripId: "t1",
+      flightNumbers: ["NH1"],
+      aircraft: ["777-300ER"],
+      carriers: ["NH"],
+      stops: 0,
+    };
+    const q = buildRetrievalQuery("options?", [option()], [trip]);
+    expect(q).toContain("777-300ER");
+  });
+});
+
+describe("buildPreFilter and trips", () => {
+  it("does not hard-filter on aircraft — spelling variance would silently exclude the right products review", () => {
+    // buildPreFilter takes no trips parameter at all (see design note above) —
+    // this test exists to catch a future accidental regression toward filtering.
+    const f = buildPreFilter([option()]);
+    expect(f).not.toHaveProperty("aircraft");
+  });
 });
 ```
 
@@ -3326,7 +3350,7 @@ Expected: FAIL — cannot resolve `./retriever`.
 
 ```ts
 // src/rag/retriever.ts
-import type { AwardOption } from "../tools";
+import type { AwardOption, TripSummary } from "../tools";
 import { getVectorStore } from "./store";
 
 export type RetrievedDoc = {
@@ -3376,10 +3400,17 @@ export function buildPreFilter(
  * The embedded query is the user's question plus a summary of what came back.
  * "Is this a good deal?" embeds poorly on its own; the same question alongside
  * "aeroplan business NH ORD-NRT 87500 miles" retrieves the right documents.
+ *
+ * Aircraft (from `trips`, when available) is folded in here rather than into
+ * `buildPreFilter` — see the design note at the top of this task. Semantic
+ * similarity tolerates "777-300ER" vs. "Boeing 777-300ER" the way a strict
+ * metadata filter would not, and this is the only KB signal that lets the
+ * `products` collection (aircraft-specific cabin reviews) actually surface.
  */
 export function buildRetrievalQuery(
   userQuestion: string,
   options: AwardOption[],
+  trips: TripSummary[] = [],
 ): string {
   if (options.length === 0) return userQuestion;
 
@@ -3387,24 +3418,29 @@ export function buildRetrievalQuery(
   const cabins = uniq(options.map((o) => o.cabin));
   const airlines = airlinesIn(options);
   const destinations = uniq(options.map((o) => o.destination)).slice(0, 8);
+  const aircraft = uniq(trips.flatMap((t) => t.aircraft));
 
-  return [
+  const lines = [
     userQuestion,
     "",
     `Programs: ${programs.join(", ")}`,
     `Cabins: ${cabins.join(", ")}`,
     `Airlines: ${airlines.join(", ")}`,
     `Destinations: ${destinations.join(", ")}`,
-  ].join("\n");
+  ];
+  if (aircraft.length > 0) lines.push(`Aircraft: ${aircraft.join(", ")}`);
+
+  return lines.join("\n");
 }
 
 export async function retrieveKnowledge(
   userQuestion: string,
   options: AwardOption[],
+  trips: TripSummary[] = [],
   k: number = DEFAULT_K,
 ): Promise<RetrievedDoc[]> {
   const store = await getVectorStore();
-  const query = buildRetrievalQuery(userQuestion, options);
+  const query = buildRetrievalQuery(userQuestion, options, trips);
   const preFilter = buildPreFilter(options);
 
   let docs = await store.similaritySearch(query, k, preFilter);
@@ -3428,7 +3464,7 @@ export async function retrieveKnowledge(
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `npx vitest run src/rag/retriever.test.ts`
-Expected: PASS (8 tests).
+Expected: PASS (10 tests).
 
 - [ ] **Step 5: Smoke-test retrieval against the real store**
 
@@ -5119,6 +5155,7 @@ export async function retrieveKnowledgeNode(
     const docs = await retrieveKnowledge(
       lastUserText(state),
       state.awardResults ?? [],
+      state.tripSummaries ?? [],
     );
     return { kbDocs: docs };
   } catch {
