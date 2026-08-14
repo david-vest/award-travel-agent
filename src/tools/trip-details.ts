@@ -32,7 +32,9 @@ export function summarizeTrip(trip: Trip, availabilityId: string): TripSummary {
     tripId: trip.ID,
     flightNumbers: uniq(segments.map((s) => s.FlightNumber)),
     aircraft: uniq([...segments.map((s) => s.AircraftName), ...(trip.Aircraft ?? [])]),
-    carriers: uniq(segments.map((s) => s.Carrier)),
+    // Per-segment `Carrier` isn't populated by the real API; the trip-level
+    // `Carriers` field (comma-delimited) is the one that actually carries data.
+    carriers: uniq((trip.Carriers ?? "").split(",").map((c) => c.trim())),
     stops: trip.Stops ?? Math.max(0, segments.length - 1),
     cabin: trip.Cabin,
     miles: trip.MileageCost,

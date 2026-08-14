@@ -1,0 +1,186 @@
+// src/agent/nodes/plan-discovery.test.ts
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { HumanMessage } from "@langchain/core/messages";
+import type { AgentStateType, DiscoveryProbe, SearchPlan } from "../state";
+
+vi.mock("../models", () => ({
+  chat: vi.fn(),
+}));
+
+vi.mock("../../tools/locations/resolve", () => ({
+  resolveLocation: vi.fn(),
+}));
+
+import { chat } from "../models";
+import { resolveLocation } from "../../tools/locations/resolve";
+import {
+  capProbes,
+  DISCOVERY_BUDGET,
+  discoveryPlanSchema,
+  probesFromPlan,
+  planDiscovery,
+} from "./plan-discovery";
+
+/** Wires `chat(...).withStructuredOutput(...).invoke(...)` to resolve with `result`. */
+function mockPlannerResponse(result: unknown) {
+  const invoke = vi.fn().mockResolvedValue(result);
+  const withStructuredOutput = vi.fn().mockReturnValue({ invoke });
+  (chat as unknown as ReturnType<typeof vi.fn>).mockReturnValue({ withStructuredOutput });
+  return { invoke, withStructuredOutput };
+}
+
+function stateWith(text: string): AgentStateType {
+  return { messages: [new HumanMessage(text)] } as AgentStateType;
+}
+
+describe("capProbes", () => {
+  it("enforces the budget in code, not by asking the model nicely", () => {
+    const probes = Array.from({ length: 20 }, (_, i) => ({ program: `p${i}` }));
+    expect(capProbes(probes)).toHaveLength(DISCOVERY_BUDGET);
+  });
+
+  it("leaves a list under budget untouched", () => {
+    const probes = [{ program: "a" }, { program: "b" }];
+    expect(capProbes(probes)).toHaveLength(2);
+  });
+
+  it("keeps the earliest probes, which the prompt orders by promise", () => {
+    const probes = [{ program: "first" }, { program: "second" }];
+    expect(capProbes(probes, 1)).toEqual([{ program: "first" }]);
+  });
+
+  it("handles an empty list", () => {
+    expect(capProbes([])).toEqual([]);
+  });
+
+  it("uses a budget of 6 by default", () => {
+    expect(DISCOVERY_BUDGET).toBe(6);
+  });
+});
+
+describe("discoveryPlanSchema", () => {
+  it("requires an origin", () => {
+    expect(() => discoveryPlanSchema.parse({ probes: [] })).toThrow();
+  });
+
+  it("accepts a plan with probes", () => {
+    const p = discoveryPlanSchema.parse({
+      origin: "Chicago",
+      probes: [
+        { program: "aeroplan", destinationRegion: "Europe", cabin: "business" },
+      ],
+    });
+    expect(p.probes).toHaveLength(1);
+  });
+});
+
+describe("probesFromPlan", () => {
+  it("returns the plan's real discoveryProbes verbatim, not a reconstruction", () => {
+    // Three probes spanning three DIFFERENT regions — the bug this guards
+    // against is a cartesian-product rebuild that would collapse them all
+    // onto one region. If discoveryProbes round-trips correctly, each
+    // probe's own destinationRegion survives.
+    const probes: DiscoveryProbe[] = [
+      { program: "aeroplan", destinationRegion: "Europe", cabin: "business" },
+      { program: "alaska", destinationRegion: "Asia", cabin: "business" },
+      { program: "turkish", destinationRegion: "Africa", cabin: "economy" },
+    ];
+    const plan: SearchPlan = {
+      origins: ["ORD"],
+      destinations: [],
+      cabins: ["business", "economy"],
+      nonstopOnly: false,
+      programs: ["aeroplan", "alaska", "turkish"],
+      discoveryProbes: probes,
+    };
+    expect(probesFromPlan(plan)).toEqual(probes);
+  });
+
+  it("returns an empty list when the plan has no discoveryProbes", () => {
+    const plan: SearchPlan = {
+      origins: ["ORD"],
+      destinations: [],
+      cabins: [],
+      nonstopOnly: false,
+      programs: [],
+    };
+    expect(probesFromPlan(plan)).toEqual([]);
+  });
+});
+
+describe("planDiscovery place resolution", () => {
+  beforeEach(() => {
+    vi.mocked(resolveLocation).mockReset();
+    vi.mocked(chat).mockReset();
+  });
+
+  it("[BUG-DROPPED-PLACE] carries an unresolved origin onto the plan instead of silently collapsing to no origins", async () => {
+    mockPlannerResponse({
+      origin: "Nowhereville",
+      probes: [{ program: "aeroplan", destinationRegion: "Europe", cabin: "business" }],
+    });
+
+    vi.mocked(resolveLocation).mockReturnValue({ kind: "unknown", query: "Nowhereville" });
+
+    const result = await planDiscovery(stateWith("where should I go from Nowhereville this fall?"));
+
+    expect(result.searchPlan?.unresolvedPlaces).toContain("Nowhereville");
+    expect(result.searchPlan?.origins).toEqual([]);
+  });
+
+  it("[BUG-DROPPED-PLACE] carries an ambiguous origin's candidates onto the plan instead of silently collapsing to no origins", async () => {
+    mockPlannerResponse({
+      origin: "London",
+      probes: [{ program: "aeroplan", destinationRegion: "Europe", cabin: "business" }],
+    });
+
+    vi.mocked(resolveLocation).mockReturnValue({
+      kind: "ambiguous",
+      query: "London",
+      candidates: ["London, United Kingdom", "London, Canada"],
+    });
+
+    const result = await planDiscovery(stateWith("where should I go from London this fall?"));
+
+    expect(result.searchPlan?.ambiguousPlaces).toContainEqual({
+      query: "London",
+      candidates: ["London, United Kingdom", "London, Canada"],
+    });
+    expect(result.searchPlan?.origins).toEqual([]);
+  });
+
+  it("[BUG-MISSING-DISABLE-THINKING] disables thinking for its structured-output call, like plan-search.ts and guard.ts do", async () => {
+    mockPlannerResponse({
+      origin: "Chicago",
+      probes: [{ program: "aeroplan", destinationRegion: "Europe", cabin: "business" }],
+    });
+    vi.mocked(resolveLocation).mockReturnValue({
+      kind: "airports",
+      iatas: ["ORD"],
+      label: "Chicago",
+    });
+
+    await planDiscovery(stateWith("where should I go from Chicago this fall?"));
+
+    expect(chat).toHaveBeenCalledWith({ effort: "low", disableThinking: true });
+  });
+
+  it("leaves unresolvedPlaces/ambiguousPlaces unset when the origin resolves cleanly", async () => {
+    mockPlannerResponse({
+      origin: "Chicago",
+      probes: [{ program: "aeroplan", destinationRegion: "Europe", cabin: "business" }],
+    });
+
+    vi.mocked(resolveLocation).mockReturnValue({
+      kind: "airports",
+      iatas: ["ORD", "MDW"],
+      label: "Chicago",
+    });
+
+    const result = await planDiscovery(stateWith("where should I go from Chicago this fall?"));
+
+    expect(result.searchPlan?.unresolvedPlaces).toBeUndefined();
+    expect(result.searchPlan?.ambiguousPlaces).toBeUndefined();
+    expect(result.searchPlan?.origins).toEqual(["ORD", "MDW"]);
+  });
+});
