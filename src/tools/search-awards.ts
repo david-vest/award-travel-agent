@@ -39,6 +39,10 @@ export function normalizeResults(raw: AvailabilityResult[]): AwardOption[] {
       // A zero or non-numeric cost means the record is junk, not a free seat.
       if (!Number.isFinite(miles) || miles <= 0) continue;
 
+      const rawSeats = r[
+        `${prefix}RemainingSeats` as keyof AvailabilityResult
+      ] as number | undefined;
+
       out.push({
         availabilityId: r.ID,
         origin: r.Route.OriginAirport,
@@ -56,9 +60,13 @@ export function normalizeResults(raw: AvailabilityResult[]): AwardOption[] {
         airlines: String(
           r[`${prefix}Airlines` as keyof AvailabilityResult] ?? r.Airlines ?? "",
         ),
-        remainingSeats: r[
-          `${prefix}RemainingSeats` as keyof AvailabilityResult
-        ] as number | undefined,
+        // seats.aero reports 0 for many programs it simply doesn't track a
+        // real seat count for, not necessarily "sold out" — the record only
+        // exists here because `${prefix}Available` was true, which already
+        // means at least one seat. Only pass through a genuine positive
+        // count; otherwise leave it unset so callers treat it as unknown
+        // rather than as evidence the seat isn't bookable.
+        remainingSeats: rawSeats && rawSeats > 0 ? rawSeats : undefined,
         updatedAt: r.UpdatedAt,
       });
     }

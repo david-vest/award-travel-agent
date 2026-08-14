@@ -78,6 +78,27 @@ describe("normalizeResults", () => {
     expect(options.some((o) => o.cabin === "business")).toBe(false);
   });
 
+  it("carries a genuine positive remaining-seats count through", () => {
+    const j = normalizeResults([record]).find((o) => o.cabin === "business");
+    expect(j?.remainingSeats).toBe(2);
+  });
+
+  it("treats a zero remaining-seats count as unknown, not sold out", () => {
+    // seats.aero reports 0 for many programs it just doesn't track a real
+    // count for; the record only exists because JAvailable was true, so at
+    // least one seat is implied. A literal 0 here would read downstream as
+    // "not bookable," which is wrong.
+    const zeroSeats = { ...record, JRemainingSeats: 0 };
+    const j = normalizeResults([zeroSeats]).find((o) => o.cabin === "business");
+    expect(j?.remainingSeats).toBeUndefined();
+  });
+
+  it("treats a missing remaining-seats field as unknown", () => {
+    const noSeats = { ...record, JRemainingSeats: undefined };
+    const j = normalizeResults([noSeats]).find((o) => o.cabin === "business");
+    expect(j?.remainingSeats).toBeUndefined();
+  });
+
   it("normalizes a timestamp-shaped ParsedDate to YYYY-MM-DD", () => {
     const timestamped = { ...record, ParsedDate: "2026-09-14T00:00:00Z" };
     const options = normalizeResults([timestamped]);

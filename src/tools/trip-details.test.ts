@@ -57,6 +57,19 @@ describe("summarizeTrip", () => {
     expect(summarizeTrip(multi, "avail-1").carriers).toEqual(["NH"]);
   });
 
+  it("reads carriers from the trip-level Carriers field, not per-segment", () => {
+    // The real API never populates AvailabilitySegments[].Carrier — only the
+    // trip-level, comma-delimited Carriers string carries this data.
+    const noSegmentCarrier: Trip = {
+      ...trip,
+      Carriers: "NH, UA",
+      AvailabilitySegments: [
+        { ...trip.AvailabilitySegments![0], Carrier: undefined },
+      ],
+    };
+    expect(summarizeTrip(noSegmentCarrier, "avail-1").carriers).toEqual(["NH", "UA"]);
+  });
+
   it("survives a trip with no segments", () => {
     const bare: Trip = { ID: "t2", Cabin: "economy", MileageCost: 45000 };
     expect(summarizeTrip(bare, "avail-2")).toMatchObject({
