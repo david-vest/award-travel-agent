@@ -6,6 +6,7 @@ import {
 import {
   mongoCacheStore,
   withResponseCache,
+  type CacheStore,
 } from "../../tools/seats-aero/response-cache";
 import { withTracing } from "../../tools/seats-aero/traced";
 import { normalizeResults, type AwardOption } from "../../tools";
@@ -17,23 +18,41 @@ import type { AgentStateType } from "../state";
 
 export const ENRICH_TOP_N = 5;
 
-let clientPromise: Promise<SeatsAeroClient> | undefined;
+type ClientParts = { inner: SeatsAeroClient; cacheStore?: CacheStore };
 
-/** Memoized so the TTL index is created once, not per request. */
-export function getClient(): Promise<SeatsAeroClient> {
-  if (!clientPromise) {
-    clientPromise = (async () => {
+let partsPromise: Promise<ClientParts> | undefined;
+
+/** Memoized so the Mongo connection and TTL index are created once, not per request. */
+function getClientParts(): Promise<ClientParts> {
+  if (!partsPromise) {
+    partsPromise = (async () => {
       const inner = createSeatsAeroClient();
       try {
         const db = (await mongoClient()).db(DB_NAME);
-        return withTracing(withResponseCache(inner, await mongoCacheStore(db)));
+        return { inner, cacheStore: await mongoCacheStore(db) };
       } catch {
         // Mongo unavailable — run uncached rather than failing the turn.
-        return withTracing(inner);
+        return { inner };
       }
     })();
   }
-  return clientPromise;
+  return partsPromise;
+}
+
+/**
+ * `skipCache: true` returns a traced client with the response-cache decorator
+ * left off entirely, so the call genuinely reaches the live API instead of
+ * replaying whatever the last identical request wrote into the 6h cache.
+ * Needed by refetch() — it deliberately re-runs the same search params the
+ * original search just ran, so a cache hit would silently hand back the same
+ * stale payload it was trying to refresh.
+ */
+export async function getClient(
+  opts: { skipCache?: boolean } = {},
+): Promise<SeatsAeroClient> {
+  const { inner, cacheStore } = await getClientParts();
+  if (opts.skipCache || !cacheStore) return withTracing(inner);
+  return withTracing(withResponseCache(inner, cacheStore));
 }
 
 /**

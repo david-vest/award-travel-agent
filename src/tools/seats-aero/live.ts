@@ -11,6 +11,15 @@ import type {
 
 const BASE_URL = "https://seats.aero/partnerapi";
 
+/**
+ * fetch() has no default timeout — a stalled connection (no response, no
+ * error) hangs forever. That's fatal for refreshAvailability's wall-clock
+ * deadline: a single hung request inside client.refresh() blocks the whole
+ * poll loop regardless of POLL_CEILING_MS, since the deadline is only
+ * checked between awaits, never during one.
+ */
+const REQUEST_TIMEOUT_MS = 20_000;
+
 type Options = { baseDelayMs?: number; maxRetries?: number };
 
 export class LiveSeatsAeroClient implements SeatsAeroClient {
@@ -76,6 +85,7 @@ export class LiveSeatsAeroClient implements SeatsAeroClient {
       try {
         res = await fetch(`${BASE_URL}${path}`, {
           ...init,
+          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
           headers: {
             Accept: "application/json",
             "Partner-Authorization": this.apiKey,
