@@ -28,7 +28,7 @@ function stateWith(text: string): AgentStateType {
   return { messages: [new HumanMessage(text)] } as AgentStateType;
 }
 
-/** The six search-derived channels every new turn must start clean on. */
+/** The channels every new turn must start clean on. */
 const SEARCH_RESET_FIELDS = {
   searchPlan: null,
   awardResults: [],
@@ -36,6 +36,7 @@ const SEARCH_RESET_FIELDS = {
   kbDocs: [],
   draft: null,
   violations: [],
+  refreshedAt: null,
 };
 
 /** Same, plus refusalReason default-reset — every path except an explicit rejection wants this. */
@@ -78,5 +79,28 @@ describe("guardInput", () => {
     expect(result).toMatchObject(RESET_FIELDS);
     expect(result.intent).toBeNull();
     expect(result.refusalReason).toBeNull();
+  });
+
+  it("neutralizes a leftover revisionCount from a prior turn despite the additive reducer", async () => {
+    // revisionCount's reducer is `(current, update) => current + update`, so
+    // a naive static `revisionCount: 0` reset would be a no-op (current + 0
+    // = current) and would NOT actually clear a count restored from a prior
+    // turn's checkpoint. guardInput must instead return the negation of
+    // whatever count came in, so current + (-current) lands on exactly 0.
+    mockGuardResponse({ allowed: true, reason: "" });
+    const priorTurnState = {
+      ...stateWith("another question"),
+      revisionCount: 1,
+    } as AgentStateType;
+
+    const result = await guardInput(priorTurnState);
+
+    expect((priorTurnState.revisionCount ?? 0) + (result.revisionCount ?? 0)).toBe(0);
+  });
+
+  it("returns a plain 0 (not -0) when there was no prior revisionCount to clear", async () => {
+    mockGuardResponse({ allowed: true, reason: "" });
+    const result = await guardInput(stateWith("business class to Tokyo"));
+    expect(result.revisionCount).toBe(0);
   });
 });

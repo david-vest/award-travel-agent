@@ -28,6 +28,7 @@ import { searchAwards } from "./nodes/search";
 import { enrichTrips } from "./nodes/enrich";
 import { retrieveKnowledgeNode } from "./nodes/retrieve";
 import { synthesize } from "./nodes/synthesize";
+import * as degradeModule from "./nodes/degrade";
 
 describe("graph", () => {
   it("compiles", () => {
@@ -56,6 +57,17 @@ describe("graph", () => {
     const graph = buildGraphWithoutCheckpointer();
     const mermaid = await graph.getGraph().drawMermaid();
     expect(mermaid).toContain("synthesize");
+  });
+
+  it("includes the loop nodes", () => {
+    const nodes = Object.keys(buildGraphWithoutCheckpointer().getGraph().nodes);
+    for (const expected of [
+      "refresh_availability",
+      "verify_groundedness",
+      "degrade",
+    ]) {
+      expect(nodes).toContain(expected);
+    }
   });
 });
 
@@ -133,5 +145,43 @@ describe("graph traversal", () => {
     );
     await invokeGraph("do something unrelated to travel");
     expect(visited).toEqual(["guard_input", "refuse"]);
+  });
+
+  /**
+   * Regression test for the Phase 5 revisionCount off-by-one: the wrapper
+   * used to increment revisionCount on every synthesize pass, including the
+   * first clean one, so by the time verify_groundedness ran after that
+   * first pass, revisionCount was already 1 — equal to MAX_REVISIONS — and
+   * routeAfterVerify degraded immediately without ever retrying. This test
+   * doesn't mock verify_groundedness or degrade (graph.ts wires the real
+   * ones in, and neither makes a model/network call), so routers.ts's real
+   * routing decisions run against a synthesize output that always contains
+   * a fabricated, ungroundable claim.
+   */
+  it("retries synthesize exactly once on a groundedness violation before degrading", async () => {
+    vi.mocked(triage).mockImplementation(rec("triage", { intent: "route_search" }));
+    vi.mocked(searchAwards).mockImplementation(
+      rec("search_awards", { awardResults: [] }),
+    );
+    // No real awardResults/tripSummaries/kbDocs ever populated, so any
+    // mileage figure quoted in the draft is unsupported and verify's real
+    // findViolations will flag it every time, forcing exactly one retry.
+    vi.mocked(synthesize).mockImplementation(
+      rec("synthesize", { draft: "This costs a fabricated 92,000 miles." }),
+    );
+    // verify_groundedness and degrade are the REAL (unmocked) nodes — they
+    // do no model/network work, so they're left wired in for real, exactly
+    // like every other test in this describe block. Spy (pass-through) on
+    // degrade just so its visit is recorded in `visited` for the assertion
+    // below; its actual behavior is untouched.
+    const degradeSpy = vi.spyOn(degradeModule, "degrade");
+
+    await invokeGraph("ORD to NRT business class");
+
+    const synthesizeVisits = visited.filter((n) => n === "synthesize");
+    expect(synthesizeVisits).toHaveLength(2);
+    expect(degradeSpy).toHaveBeenCalledTimes(1);
+
+    degradeSpy.mockRestore();
   });
 });

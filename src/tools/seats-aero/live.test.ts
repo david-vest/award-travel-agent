@@ -97,6 +97,35 @@ describe("LiveSeatsAeroClient", () => {
     await expect(client.refresh([])).rejects.toMatchObject({ status: 400 });
   });
 
+  it("attaches an abort signal to every request, so a stalled connection cannot hang forever", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(okResponse({ data: [], count: 0, hasMore: false, cursor: 0 }));
+
+    const client = new LiveSeatsAeroClient("test-key");
+    await client.search({ origin_airport: "ORD", destination_airport: "NRT" });
+
+    const [, init] = fetchSpy.mock.calls[0];
+    expect(init?.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("treats a request timeout the same as any other network-level failure", async () => {
+    // AbortSignal.timeout() rejects fetch with a TimeoutError DOMException —
+    // this is what a real stalled connection produces, not a fabricated stub.
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(
+      new DOMException("The operation timed out.", "TimeoutError"),
+    );
+
+    const client = new LiveSeatsAeroClient("test-key", {
+      baseDelayMs: 1,
+      maxRetries: 2,
+    });
+
+    await expect(
+      client.search({ origin_airport: "ORD", destination_airport: "NRT" }),
+    ).rejects.toMatchObject({ status: 0 });
+  });
+
   it("omits undefined params from the query string", async () => {
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
