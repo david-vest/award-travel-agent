@@ -64,7 +64,10 @@ export async function planDiscovery(state: AgentStateType): Promise<AgentStateUp
       role: "user",
       content: [
         `Today's date is ${today}.`,
-        `If the user gives no timing, consider ${today} through ${defaultEnd}.`,
+        `If the current message states or implies timing, resolve it relative ` +
+          `to ${today}. The system applies a default window of ${today} ` +
+          `through ${defaultEnd} automatically when the current message says ` +
+          `nothing about timing, so omit startDate/endDate entirely in that case.`,
         `At most ${DISCOVERY_BUDGET} probes will be executed.`,
         ...(priorContext ? ["", "Earlier in this conversation:", priorContext] : []),
         "",
@@ -74,7 +77,18 @@ export async function planDiscovery(state: AgentStateType): Promise<AgentStateUp
     },
   ]);
 
-  const probes = capProbes(raw.probes);
+  // A sticky cabin restriction from a prior turn is enforced here in code,
+  // not just requested in the prompt — mirrors capProbes's own philosophy
+  // ("'At most six' in a system prompt is a suggestion; slice is a
+  // guarantee"). Filtering the probe list itself (rather than only the
+  // summary `cabins` field below) also means a probe outside the restriction
+  // never actually runs, not just that it's hidden from display.
+  const stickyCabins = state.searchPlan?.cabins ?? [];
+  const rawProbes =
+    stickyCabins.length > 0
+      ? raw.probes.filter((p) => stickyCabins.includes(p.cabin))
+      : raw.probes;
+  const probes = capProbes(rawProbes);
 
   // Unresolved/ambiguous origins are collected rather than silently dropped —
   // mirrors plan-search.ts's expand(). Only resolved (and origins set at

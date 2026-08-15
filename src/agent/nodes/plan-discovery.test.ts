@@ -33,6 +33,13 @@ function stateWith(text: string): AgentStateType {
   return { messages: [new HumanMessage(text)] } as AgentStateType;
 }
 
+function stateWithPriorPlan(text: string, priorPlan: Partial<SearchPlan>): AgentStateType {
+  return {
+    messages: [new HumanMessage(text)],
+    searchPlan: priorPlan,
+  } as AgentStateType;
+}
+
 /**
  * `AgentStateUpdate`'s `searchPlan` field is typed as
  * `Partial<SearchPlan> | null | OverwriteValue<SearchPlan | null>` because
@@ -240,5 +247,53 @@ describe("planDiscovery place resolution", () => {
     const result = await planDiscovery(stateWith("where should I go from Chicago this fall?"));
 
     expect(result.searchPlan).not.toHaveProperty("nonstopOnly");
+  });
+
+  it("[BUG-CABIN-WIDENED] filters probes outside a prior turn's sticky cabin restriction, in code, not just via prompt request", async () => {
+    mockPlannerResponse({
+      origin: "Chicago",
+      probes: [
+        { program: "aeroplan", destinationRegion: "Europe", cabin: "business" },
+        { program: "flyingblue", destinationRegion: "Asia", cabin: "economy" },
+        { program: "united", destinationRegion: "Oceania", cabin: "first" },
+      ],
+    });
+    vi.mocked(resolveLocation).mockReturnValue({
+      kind: "airports",
+      iatas: ["ORD"],
+      label: "Chicago",
+    });
+
+    const result = await planDiscovery(
+      stateWithPriorPlan("where should I go from Chicago this fall?", {
+        cabins: ["business", "first"],
+      }),
+    );
+
+    const plan = planOf(result);
+    expect(plan?.cabins).toEqual(["business", "first"]);
+    expect(plan?.discoveryProbes?.map((p) => p.cabin)).toEqual(["business", "first"]);
+    expect(plan?.discoveryProbes?.some((p) => p.cabin === "economy")).toBe(false);
+  });
+
+  it("does not filter probes when there is no prior cabin restriction", async () => {
+    mockPlannerResponse({
+      origin: "Chicago",
+      probes: [
+        { program: "aeroplan", destinationRegion: "Europe", cabin: "business" },
+        { program: "flyingblue", destinationRegion: "Asia", cabin: "economy" },
+      ],
+    });
+    vi.mocked(resolveLocation).mockReturnValue({
+      kind: "airports",
+      iatas: ["ORD"],
+      label: "Chicago",
+    });
+
+    const result = await planDiscovery(stateWith("where should I go from Chicago this fall?"));
+
+    const plan = planOf(result);
+    expect(plan?.cabins).toEqual(["business", "economy"]);
+    expect(plan?.discoveryProbes).toHaveLength(2);
   });
 });

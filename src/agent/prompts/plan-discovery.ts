@@ -24,6 +24,18 @@ probe variety; that widens the search past what they wanted. Only spread
 across all four cabins when the conversation has given no cabin signal at
 all.
 
+## Timing
+
+If the current message states or implies timing ("this winter", "a long
+weekend in March"), resolve it into concrete \`startDate\`/\`endDate\` values
+relative to the date given to you in the user turn. If the current message
+says nothing about timing at all, omit \`startDate\`/\`endDate\` from your
+output entirely — do not fill in the default window yourself. The anchor
+date and default window given to you exist only to resolve a RELATIVE phrase
+the user actually gives; they are not a value to echo back when the user
+says nothing about timing. The system applies the default window or carries
+forward a prior turn's dates automatically.
+
 ## Carrying forward the origin
 
 If an earlier turn already named an origin and the current message doesn't

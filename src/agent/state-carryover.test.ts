@@ -111,25 +111,36 @@ describe("[REGRESSION] search-plan survives a multi-turn conversation like the o
       expect(plan.origins.length).toBeGreaterThan(0);
 
       // Turn 3: a broad, discovery-style follow-up naming a lot of airports —
-      // mentions no destination, dates, or cabin at all.
+      // mentions no destination, dates, or cabin at all. The mocked probes
+      // include one outside the turn-1-established business/first
+      // restriction (economy), so this also exercises plan-discovery.ts's
+      // code-level cabin filter — the sticky restriction must survive this
+      // discovery turn, not just the fields the model didn't touch.
       mockPlannerResponse({
-        probes: [{ program: "flyingblue", destinationRegion: "Europe", cabin: "business" }],
+        probes: [
+          { program: "flyingblue", destinationRegion: "Europe", cabin: "business" },
+          { program: "united", destinationRegion: "Europe", cabin: "first" },
+          { program: "delta", destinationRegion: "Europe", cabin: "economy" },
+        ],
       });
       plan = applyUpdate(
         plan,
         (
-          await planDiscovery(
-            conversationWith(
+          await planDiscovery({
+            ...conversationWith(
               "Find any business or first flight to Toulouse between September 15th-18th 2026",
               "USA is valid, seats.aero accepts it",
               "Look at ORD, JFK, MIA, ATL, BOS, PHL, DFW, IAH to CDG, LHR, FRA, BCN, MAD, CPH, MUC, VIE, Zurich",
             ),
-          )
+            searchPlan: plan,
+          })
         ).searchPlan as Partial<SearchPlan>,
       );
       expect(plan.destinations).toEqual(["TLS"]);
       expect(plan.startDate).toBe("2026-09-15");
       expect(plan.endDate).toBe("2026-09-18");
+      expect(plan.cabins).toEqual(["business", "first"]);
+      expect(plan.discoveryProbes?.some((p) => p.cabin === "economy")).toBe(false);
 
       // Turn 4: user re-asserts the cabin restriction alone, as they had to
       // in the real trace ("Only look at Business or first").
