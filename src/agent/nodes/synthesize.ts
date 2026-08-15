@@ -35,8 +35,15 @@ export function buildSynthesisContext(state: AgentStateType): string {
 
   parts.push(`User question:\n${lastUserText(state)}`);
 
-  const unresolvedPlaces = state.searchPlan?.unresolvedPlaces ?? [];
-  const ambiguousPlaces = state.searchPlan?.ambiguousPlaces ?? [];
+  // Gated on intent, like searchWasAttempted above: a knowledge-intent turn
+  // never writes searchPlan itself, so guard.ts no longer nulling it (Task 5)
+  // means a place that failed to resolve on an EARLIER search turn can still
+  // be sitting in state.searchPlan.unresolvedPlaces here. Surfacing it into
+  // an unrelated knowledge-only answer would be a stale-diagnostic leak.
+  const unresolvedPlaces =
+    state.intent === "knowledge" ? [] : (state.searchPlan?.unresolvedPlaces ?? []);
+  const ambiguousPlaces =
+    state.intent === "knowledge" ? [] : (state.searchPlan?.ambiguousPlaces ?? []);
   if (unresolvedPlaces.length > 0 || ambiguousPlaces.length > 0) {
     const lines: string[] = [];
     if (unresolvedPlaces.length > 0) {

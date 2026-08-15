@@ -163,6 +163,23 @@ describe("buildSynthesisContext", () => {
     expect(buildSynthesisContext(s)).toContain("Wakanda");
   });
 
+  it("[BUG-STALE-DIAGNOSTIC-LEAK] does not surface a stale unresolvedPlaces from an earlier search turn on an unrelated knowledge-intent turn", () => {
+    const s = state({
+      intent: "knowledge",
+      searchPlan: {
+        origins: ["ORD"],
+        destinations: [],
+        cabins: [],
+        nonstopOnly: false,
+        programs: [],
+        unresolvedPlaces: ["Nowhereville"],
+      } as never,
+    });
+    const ctx = buildSynthesisContext(s);
+    expect(ctx).not.toContain("Nowhereville");
+    expect(ctx).not.toMatch(/location resolution notes/i);
+  });
+
   it("surfaces an ambiguous place's candidates so the model can ask which was meant", () => {
     const s = state({
       searchPlan: {
