@@ -3,7 +3,7 @@ import { chat } from "../models";
 import { cachedSystem } from "../cache";
 import { PLAN_SEARCH_PROMPT } from "../prompts/plan-search";
 import { resolveLocation } from "../../tools/locations/resolve";
-import type { AgentStateType, SearchPlan } from "../state";
+import type { AgentStateType, AgentStateUpdate, SearchPlan } from "../state";
 import { lastUserText, conversationContext } from "./triage";
 
 const DEFAULT_WINDOW_DAYS = 60;
@@ -11,11 +11,20 @@ const DEFAULT_WINDOW_DAYS = 60;
 export const searchPlanSchema = z.object({
   origins: z
     .array(z.string())
-    .min(1)
-    .describe("Origin cities or airport codes as the user expressed them"),
+    .optional()
+    .describe(
+      "Origin cities or airport codes as the user expressed them. Omit " +
+        "entirely if the current message doesn't address origin — the " +
+        "system carries forward whatever an earlier turn established.",
+    ),
   destinations: z
     .array(z.string())
-    .describe("Destination cities/airports, or empty if a region is used"),
+    .optional()
+    .describe(
+      "Destination cities/airports, or an empty list when the request " +
+        "names a region instead. Omit entirely if the current message " +
+        "doesn't address destination at all.",
+    ),
   destinationRegion: z
     .string()
     .optional()
@@ -24,9 +33,12 @@ export const searchPlanSchema = z.object({
   endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   cabins: z
     .array(z.enum(["economy", "premium", "business", "first"]))
-    .default(["economy", "premium", "business", "first"]),
-  nonstopOnly: z.boolean().default(false),
-  programs: z.array(z.string()).default([]),
+    .optional()
+    .describe(
+      "Only when the current message states or changes a cabin preference.",
+    ),
+  nonstopOnly: z.boolean().optional(),
+  programs: z.array(z.string()).optional(),
   rationale: z.string().optional(),
 });
 
@@ -63,57 +75,60 @@ export function buildPlannerContext(
   return lines.join("\n");
 }
 
-export async function planSearch(
-  state: AgentStateType,
-): Promise<Partial<AgentStateType>> {
+export async function planSearch(state: AgentStateType): Promise<AgentStateUpdate> {
   const model = chat({ effort: "low", disableThinking: true }).withStructuredOutput(
     searchPlanSchema,
     { name: "search_plan" },
   );
 
   const now = new Date();
+  const priorContext = await conversationContext(state);
   const raw = await model.invoke([
     cachedSystem(PLAN_SEARCH_PROMPT),
     {
       role: "user",
-      content: buildPlannerContext(lastUserText(state), now, conversationContext(state)),
+      content: buildPlannerContext(lastUserText(state), now, priorContext),
     },
   ]);
 
-  // Expand place names deterministically. The model names places; the lookup
-  // table produces codes, so a hallucinated airport cannot reach the API.
-  // Unresolved and ambiguous names are collected rather than silently
-  // dropped — synthesize (Task 4.7) tells the user about them.
-  const originsResult = expand(raw.origins);
-  const destinationsResult = expand(raw.destinations);
-  const unresolvedPlaces = [...originsResult.unresolved, ...destinationsResult.unresolved];
-  const ambiguousPlaces = [...originsResult.ambiguous, ...destinationsResult.ambiguous];
+  // Expand place names deterministically, only when this turn actually named
+  // them. Presence — even an empty list — means "this turn's answer";
+  // omission means "carry forward the prior plan's value," which is
+  // searchPlan's merge reducer's job (state.ts), not this node's.
+  const originsResult = raw.origins !== undefined ? expand(raw.origins) : undefined;
+  const destinationsResult =
+    raw.destinations !== undefined ? expand(raw.destinations) : undefined;
+  const unresolvedPlaces = [
+    ...(originsResult?.unresolved ?? []),
+    ...(destinationsResult?.unresolved ?? []),
+  ];
+  const ambiguousPlaces = [
+    ...(originsResult?.ambiguous ?? []),
+    ...(destinationsResult?.ambiguous ?? []),
+  ];
 
-  // Default dates when the model omits them, same as plan-discovery.ts —
-  // otherwise an omitted date produces a search with no date bounds at all.
-  const today = now.toISOString().slice(0, 10);
-  const defaultEnd = new Date(now.getTime() + DEFAULT_WINDOW_DAYS * 86_400_000)
-    .toISOString()
-    .slice(0, 10);
-
-  const plan: SearchPlan = {
-    origins: originsResult.codes,
-    destinations: destinationsResult.codes,
+  const plan: Partial<SearchPlan> = {
+    origins: originsResult?.codes,
+    destinations: destinationsResult?.codes,
     destinationRegion: raw.destinationRegion,
-    startDate: raw.startDate ?? today,
-    endDate: raw.endDate ?? defaultEnd,
-    // withStructuredOutput's inferred RunOutput type treats zod .default()
-    // fields as optional (it types against the schema's input, not its
-    // output), even though the runtime value is always filled in by the
-    // time it gets here. The fallbacks below just satisfy the type checker
-    // with the same defaults searchPlanSchema already declares.
-    cabins: raw.cabins ?? ["economy", "premium", "business", "first"],
-    nonstopOnly: raw.nonstopOnly ?? false,
-    programs: raw.programs ?? [],
+    startDate: raw.startDate,
+    endDate: raw.endDate,
+    cabins: raw.cabins,
+    nonstopOnly: raw.nonstopOnly,
+    programs: raw.programs,
     rationale: raw.rationale,
     unresolvedPlaces: unresolvedPlaces.length > 0 ? unresolvedPlaces : undefined,
     ambiguousPlaces: ambiguousPlaces.length > 0 ? ambiguousPlaces : undefined,
   };
+
+  // Drop undefined-valued keys entirely rather than leaving them present.
+  // The merge reducer treats "present with undefined" the same as "absent"
+  // either way (both read as undefined through optional chaining), but an
+  // omitted turn should produce a plan object that doesn't even list the
+  // field it didn't touch.
+  for (const key of Object.keys(plan) as (keyof typeof plan)[]) {
+    if (plan[key] === undefined) delete plan[key];
+  }
 
   return { searchPlan: plan };
 }

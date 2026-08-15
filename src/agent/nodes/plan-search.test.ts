@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { HumanMessage, AIMessage } from "@langchain/core/messages";
 import { estimateTokens, CACHE_MIN_TOKENS } from "../cache";
 import { PLAN_SEARCH_PROMPT } from "../prompts/plan-search";
-import type { AgentStateType } from "../state";
+import type { AgentStateType, SearchPlan } from "../state";
 
 vi.mock("../models", () => ({
   chat: vi.fn(),
@@ -26,6 +26,20 @@ function mockPlannerResponse(result: unknown) {
 
 function stateWith(text: string): AgentStateType {
   return { messages: [new HumanMessage(text)] } as AgentStateType;
+}
+
+/**
+ * `AgentStateUpdate`'s `searchPlan` field is typed as
+ * `Partial<SearchPlan> | null | OverwriteValue<SearchPlan | null>` because
+ * LangGraph's `Annotation()` unions every custom-reducer channel's update
+ * type with an internal overwrite marker. planSearch never returns that
+ * marker, so this narrows the type down to what these tests actually deal
+ * with instead of asserting it at every call site.
+ */
+function planOf(
+  result: Awaited<ReturnType<typeof planSearch>>,
+): Partial<SearchPlan> | null | undefined {
+  return result.searchPlan as Partial<SearchPlan> | null | undefined;
 }
 
 describe("buildPlannerContext", () => {
@@ -75,20 +89,19 @@ describe("PLAN_SEARCH_PROMPT", () => {
 });
 
 describe("searchPlanSchema", () => {
-  it("defaults nonstopOnly to false", () => {
-    const p = searchPlanSchema.parse({ origins: ["ORD"], destinations: ["NRT"] });
-    expect(p.nonstopOnly).toBe(false);
+  it("allows omitting nonstopOnly so a turn that doesn't address it can carry the prior value forward", () => {
+    const p = searchPlanSchema.parse({});
+    expect(p.nonstopOnly).toBeUndefined();
   });
 
-  it("defaults cabins to all four", () => {
-    const p = searchPlanSchema.parse({ origins: ["ORD"], destinations: ["NRT"] });
-    expect(p.cabins).toHaveLength(4);
+  it("allows omitting cabins so a turn that doesn't address it can carry the prior value forward", () => {
+    const p = searchPlanSchema.parse({});
+    expect(p.cabins).toBeUndefined();
   });
 
-  it("rejects an empty origins list", () => {
-    expect(() =>
-      searchPlanSchema.parse({ origins: [], destinations: ["NRT"] }),
-    ).toThrow();
+  it("allows omitting origins entirely, unlike the old required min(1) list", () => {
+    const p = searchPlanSchema.parse({});
+    expect(p.origins).toBeUndefined();
   });
 });
 
@@ -118,8 +131,8 @@ describe("planSearch place resolution", () => {
 
     const result = await planSearch(stateWith("flights to Nowhereville from Chicago"));
 
-    expect(result.searchPlan?.unresolvedPlaces).toContain("Nowhereville");
-    expect(result.searchPlan?.origins).toEqual(["ORD", "MDW"]);
+    expect(planOf(result)?.unresolvedPlaces).toContain("Nowhereville");
+    expect(planOf(result)?.origins).toEqual(["ORD", "MDW"]);
   });
 
   it("carries an ambiguous match's candidates onto the plan instead of dropping it", async () => {
@@ -145,11 +158,11 @@ describe("planSearch place resolution", () => {
 
     const result = await planSearch(stateWith("flights from San to Tokyo"));
 
-    expect(result.searchPlan?.ambiguousPlaces).toContainEqual({
+    expect(planOf(result)?.ambiguousPlaces).toContainEqual({
       query: "San",
       candidates: ["San Francisco", "San Diego", "San Jose"],
     });
-    expect(result.searchPlan?.destinations).toEqual(["NRT", "HND"]);
+    expect(planOf(result)?.destinations).toEqual(["NRT", "HND"]);
   });
 
   it("carries prior-turn context into the planner request for a follow-up message", async () => {
@@ -181,29 +194,39 @@ describe("planSearch place resolution", () => {
     expect(sentUserContent).toContain("actually nonstop only");
   });
 
-  it("defaults startDate/endDate to today/today+window when the model omits them", async () => {
-    mockPlannerResponse({
-      origins: ["ORD"],
-      destinations: ["NRT"],
-      cabins: ["economy", "premium", "business", "first"],
-      nonstopOnly: false,
-      programs: [],
-      // startDate/endDate deliberately omitted, as if the model didn't supply them.
-    });
+  it("omits startDate/endDate when the model doesn't supply them, leaving the reducer to default or carry them forward", async () => {
+    mockPlannerResponse({ origins: ["ORD"], destinations: ["NRT"] });
     vi.mocked(resolveLocation).mockReturnValue({
       kind: "airports",
       iatas: ["ORD"],
       label: "ORD",
     } as never);
 
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-08-11T00:00:00Z"));
-    try {
-      const result = await planSearch(stateWith("ORD to NRT"));
-      expect(result.searchPlan?.startDate).toBe("2026-08-11");
-      expect(result.searchPlan?.endDate).toBe("2026-10-10"); // +60 days
-    } finally {
-      vi.useRealTimers();
-    }
+    const result = await planSearch(stateWith("ORD to NRT"));
+    expect(planOf(result)?.startDate).toBeUndefined();
+    expect(planOf(result)?.endDate).toBeUndefined();
+  });
+
+  it("omits destinations entirely when the current turn doesn't address it, instead of resetting to empty", async () => {
+    mockPlannerResponse({ cabins: ["business"] });
+    const result = await planSearch(stateWith("only business, please"));
+    expect(planOf(result)).not.toHaveProperty("destinations");
+  });
+
+  it("sends an explicit empty destinations list when the model names a region, distinct from omitting it", async () => {
+    mockPlannerResponse({
+      origins: ["Chicago"],
+      destinations: [],
+      destinationRegion: "Europe",
+    });
+    vi.mocked(resolveLocation).mockReturnValue({
+      kind: "airports",
+      iatas: ["ORD", "MDW"],
+      label: "Chicago",
+    } as never);
+
+    const result = await planSearch(stateWith("anywhere in Europe from Chicago"));
+    expect(planOf(result)?.destinations).toEqual([]);
+    expect(planOf(result)?.destinationRegion).toBe("Europe");
   });
 });

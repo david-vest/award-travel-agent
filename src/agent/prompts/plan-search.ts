@@ -54,9 +54,12 @@ Users describe cabins loosely. Map what they say onto the canonical values
 
 If the user mentions only one cabin, plan for that cabin alone rather than
 padding the list — a request for "business class to Tokyo" means
-\`cabins: ["business"]\`, not all four. If the user gives no cabin signal at
-all, default to all four so the search doesn't silently exclude an option
-the user might have accepted.
+\`cabins: ["business"]\`, not all four. If the current message gives no
+cabin signal at all, omit \`cabins\` from your output entirely — do not
+guess or default it yourself. The system carries forward whatever cabin
+preference an earlier turn established, and treats a never-established
+preference as "no restriction," which is exactly what an omitted field
+means downstream.
 
 ## Date windows
 
@@ -76,9 +79,14 @@ Rules for resolving relative time expressions:
   \`startDate\`/\`endDate\` window wide enough to plausibly cover what the user
   meant — a vague window like "this summer" should span at least several
   weeks, not a single day.
-- If the user gives no timing information at all, use the exact default
-  window the user turn provides you (it states both the anchor date and the
-  default end date) rather than picking your own arbitrary window.
+- If the current message gives no timing information at all, omit
+  \`startDate\`/\`endDate\` from your output entirely — do not fill in the
+  stated default window yourself. The anchor date and default window given
+  to you above exist only so you can resolve a RELATIVE phrase ("this
+  summer", "next month") into concrete dates when the user does mention
+  timing; they are not a value to echo back when the user says nothing
+  about timing at all. The system applies the default window or carries
+  forward a prior turn's dates automatically.
 - A bare month name ("in March", "sometime in April") means the *next*
   occurrence of that month relative to the anchor date — if the anchor date
   already falls after that month this year, roll forward to next year's
@@ -104,24 +112,39 @@ destinations named as cities.
 
 ## Structured output
 
-Produce these fields:
+Every field below except \`rationale\` is optional. Produce a field only when
+the user's CURRENT message establishes or changes it. Omit a field
+entirely — do not include the key at all — when the current message is
+silent on it; the system automatically carries forward whatever an earlier
+turn in this conversation already established for that field, so
+re-stating it yourself is redundant and risks getting it subtly wrong from
+a partial memory of the conversation. One exception worth naming
+explicitly: an empty \`destinations\` list is itself a meaningful, present
+value ("no specific cities, use the region" — pair it with
+\`destinationRegion\`), so send it whenever the user actually asks about a
+region this turn, and send an empty list rather than omitting the field
+when a place name you were given resolves to nothing at all.
 
 - \`origins\`: the origin cities/airports as the user expressed them (plain
-  names, not codes you invented).
+  names, not codes you invented). Omit only when the current message
+  doesn't address origin at all — e.g. a follow-up like "only business or
+  first" that doesn't repeat where the trip starts from.
 - \`destinations\`: destination cities/airports as expressed, or an empty
-  list when the request only names a region.
+  list when the request only names a region. Omit only when the current
+  message doesn't address destination at all.
 - \`destinationRegion\`: one of the six region names above, only when the
-  user asked about a broad area rather than named cities.
+  user asked about a broad area rather than named cities this turn.
 - \`startDate\` / \`endDate\`: concrete \`YYYY-MM-DD\` values resolved per the
-  rules above.
-- \`cabins\`: the canonical cabin values implied by the request.
-- \`nonstopOnly\`: true only when the user explicitly asked for nonstop or
-  direct flights; otherwise false.
+  rules above, only when this turn states or changes timing.
+- \`cabins\`: the canonical cabin values implied by the request, only when
+  this turn states or changes a cabin preference.
+- \`nonstopOnly\`: true or false, only when the user explicitly addresses
+  nonstop/direct flights this turn.
 - \`programs\`: the shortlist of plausible program identifiers from the list
-  above.
-- \`rationale\`: a short free-text note explaining the choices you made,
-  especially any inference (program shortlist, default date window, cabin
-  defaulting) that isn't directly stated by the user. This is surfaced in
+  above, only when this turn gives you enough to name one.
+- \`rationale\`: a short free-text note explaining the choices you made this
+  turn, especially any inference (program shortlist, date window, cabin
+  reading) that isn't directly stated by the user. This is surfaced in
   traces and evaluations, not shown to the end user, so be candid about your
   reasoning rather than performing confidence you don't have.
 
@@ -149,28 +172,30 @@ explicit nonstop requirement plus a two-cabin request. Output:
 against the anchor date, and a program shortlist of carriers with strong
 nonstop Chicago-Europe premium-cabin service.
 
-**Example 3 — vague timing.** User: "What's the best way to use my miles
-to get to Tokyo from LA?" No cabin, no dates, no program named. Because no
-timing is given at all, use the default window exactly as stated in the
-user turn rather than guessing your own. Because no cabin is named, default
-to all four cabins so nothing plausible is excluded. Output:
-\`origins: ["LA"]\`, \`destinations: ["Tokyo"]\`,
-\`cabins: ["economy", "premium", "business", "first"]\`,
-\`nonstopOnly: false\`, dates set to the stated default window, and a
-program shortlist of carriers and alliance partners known for
-transpacific availability to Tokyo.
+**Example 3 — nothing but the route.** User: "What's the best way to use
+my miles to get to Tokyo from LA?" No cabin, no dates, no program named.
+Output \`origins: ["LA"]\` and \`destinations: ["Tokyo"]\` — those are
+present, since the route is what the user actually named. Omit \`cabins\`
+and \`startDate\`/\`endDate\` entirely: no cabin or timing signal exists
+anywhere in this conversation, so there is nothing to carry forward or
+state, and the system's own defaulting (unrestricted cabins, a
+today-plus-60-day window) already produces the right behavior without you
+guessing at it. Do still include a program shortlist of carriers and
+alliance partners known for transpacific availability to Tokyo, since that
+inference is genuinely yours to make.
 
-**Example 4 — follow-up that inherits context from a previous turn.**
+**Example 4 — follow-up that changes only one thing.**
 Earlier the user said "flights to Lisbon from Boston in business class next
 month," and the follow-up now says "actually can you check nonstop only,
 and add first class too." The follow-up alone names no origin, no
 destination, and no dates — it only modifies the cabin and adds a nonstop
-constraint. Carry forward everything the earlier turn established (origin,
-destination, date window) and apply only the stated change: widen
-\`cabins\` to include both \`business\` and \`first\`, and flip
-\`nonstopOnly\` to true. Do not drop the origin, destination, or dates just
-because this turn didn't repeat them — a follow-up modifies a plan in
-progress, it doesn't start a new one from nothing.
+constraint. Output only what changed: \`cabins: ["business", "first"]\` and
+\`nonstopOnly: true\`. Omit \`origins\`, \`destinations\`, \`destinationRegion\`,
+\`startDate\`, and \`endDate\` entirely — do not try to recall and restate
+Boston/Lisbon/next-month yourself from the conversation snippet above; the
+system already has the authoritative values from the earlier turn and will
+apply them automatically. Your job on a follow-up is to name the delta, not
+to reconstruct the whole plan from a text summary.
 
 ## What not to do
 
