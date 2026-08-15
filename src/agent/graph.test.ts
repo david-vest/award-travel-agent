@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { HumanMessage } from "@langchain/core/messages";
-import type { AgentStateType } from "./state";
+import type { AgentStateType, AgentStateUpdate } from "./state";
 
 // Mock every node module so traversal can be asserted without live model,
 // seats.aero, or Mongo calls — buildGraphWithoutCheckpointer() wires these
@@ -113,7 +113,7 @@ describe("graph traversal", () => {
 
   function invokeGraph(text: string) {
     const graph = buildGraphWithoutCheckpointer();
-    return graph.invoke({ messages: [new HumanMessage(text)] } as AgentStateType);
+    return graph.invoke({ messages: [new HumanMessage(text)] } as AgentStateUpdate);
   }
 
   it("visits plan_search, not plan_discovery, for a route_search intent", async () => {
