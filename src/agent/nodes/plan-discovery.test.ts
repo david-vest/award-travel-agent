@@ -296,4 +296,65 @@ describe("planDiscovery place resolution", () => {
     expect(plan?.cabins).toEqual(["business", "economy"]);
     expect(plan?.discoveryProbes).toHaveLength(2);
   });
+
+  it("[BUG-CABIN-ZEROED] falls back to the unfiltered probes when a sticky cabin restriction would zero out every probe", async () => {
+    // Prior turn's plan has cabins but no discoveryProbes — a real
+    // route_search restriction, not a discovery turn's own summary — so the
+    // filter is exercised, not skipped outright by the bootstrapping guard.
+    mockPlannerResponse({
+      origin: "Chicago",
+      probes: [
+        { program: "flyingblue", destinationRegion: "Asia", cabin: "economy" },
+        { program: "delta", destinationRegion: "Europe", cabin: "economy" },
+      ],
+    });
+    vi.mocked(resolveLocation).mockReturnValue({
+      kind: "airports",
+      iatas: ["ORD"],
+      label: "Chicago",
+    });
+
+    const result = await planDiscovery(
+      stateWithPriorPlan("what about economy options out of Chicago?", {
+        cabins: ["business"],
+      }),
+    );
+
+    const plan = planOf(result);
+    expect(plan?.discoveryProbes).not.toEqual([]);
+    expect(plan?.discoveryProbes?.map((p) => p.cabin)).toEqual(["economy", "economy"]);
+    expect(plan?.cabins).toEqual(["economy"]);
+  });
+
+  it("does not treat a prior discovery turn's own auto-derived cabin summary as a sticky restriction", async () => {
+    // Prior plan has both cabins AND discoveryProbes — i.e. it came from a
+    // prior discovery turn's own probe-coverage summary, not a real
+    // user-stated restriction — so it must not constrain this turn at all,
+    // even when some current-turn probes would still match it.
+    mockPlannerResponse({
+      origin: "Chicago",
+      probes: [
+        { program: "flyingblue", destinationRegion: "Asia", cabin: "economy" },
+        { program: "delta", destinationRegion: "Europe", cabin: "economy" },
+      ],
+    });
+    vi.mocked(resolveLocation).mockReturnValue({
+      kind: "airports",
+      iatas: ["ORD"],
+      label: "Chicago",
+    });
+
+    const result = await planDiscovery(
+      stateWithPriorPlan("what about economy options out of Chicago?", {
+        cabins: ["business"],
+        discoveryProbes: [
+          { program: "aeroplan", destinationRegion: "Europe", cabin: "business" },
+        ],
+      }),
+    );
+
+    const plan = planOf(result);
+    expect(plan?.discoveryProbes?.map((p) => p.cabin)).toEqual(["economy", "economy"]);
+    expect(plan?.cabins).toEqual(["economy"]);
+  });
 });

@@ -11,7 +11,11 @@ import { lastUserText, conversationContext } from "./triage";
 /** Hard cap on tool calls for one open-ended question. Protects daily quota. */
 export const DISCOVERY_BUDGET = 6;
 
-const DEFAULT_WINDOW_DAYS = 90;
+// Must match state.ts's mergeSearchPlan reducer fallback (and
+// plan-search.ts's own DEFAULT_WINDOW_DAYS) — the prompt below states this
+// default to the model, but the reducer is what actually applies it when the
+// current turn omits dates, so the two must stay in lockstep.
+const DEFAULT_WINDOW_DAYS = 60;
 
 export const discoveryPlanSchema = z.object({
   origin: z
@@ -83,11 +87,33 @@ export async function planDiscovery(state: AgentStateType): Promise<AgentStateUp
   // guarantee"). Filtering the probe list itself (rather than only the
   // summary `cabins` field below) also means a probe outside the restriction
   // never actually runs, not just that it's hidden from display.
-  const stickyCabins = state.searchPlan?.cabins ?? [];
-  const rawProbes =
+  //
+  // `searchPlan.cabins` is ambiguous about where it came from: plan-search.ts
+  // only sets it when the user explicitly states/changes a cabin preference
+  // (a real restriction worth being sticky about), but planDiscovery itself
+  // always sets it below as an auto-derived SUMMARY of whatever cabins that
+  // turn's own probes happened to cover — never a stated preference. Treating
+  // that summary as a sticky restriction for a LATER discovery turn would
+  // silently bootstrap a constraint the user never asked for. A prior plan
+  // that itself has `discoveryProbes` came from a discovery turn, so its
+  // `cabins` is that auto-derived summary, not a real restriction — only
+  // treat `cabins` as sticky when the prior plan has no `discoveryProbes`
+  // (i.e. it came from a route_search turn).
+  const priorPlanIsFromDiscovery = (state.searchPlan?.discoveryProbes?.length ?? 0) > 0;
+  const stickyCabins = priorPlanIsFromDiscovery ? [] : (state.searchPlan?.cabins ?? []);
+  const filteredProbes =
     stickyCabins.length > 0
       ? raw.probes.filter((p) => stickyCabins.includes(p.cabin))
       : raw.probes;
+  // Escape hatch: if the sticky restriction would zero out every probe the
+  // model proposed, that's a signal the current turn is asking about a
+  // genuinely different cabin (e.g. "what about economy?" after a prior
+  // business-only turn), not that zero probes should run. Falling back to the
+  // unfiltered list lets the current turn's own signal win rather than
+  // returning a misleading "could not resolve" answer from an empty
+  // discoveryProbes list.
+  const rawProbes =
+    filteredProbes.length === 0 && raw.probes.length > 0 ? raw.probes : filteredProbes;
   const probes = capProbes(rawProbes);
 
   // Unresolved/ambiguous origins are collected rather than silently dropped —
