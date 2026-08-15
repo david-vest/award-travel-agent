@@ -1,6 +1,7 @@
 import { z } from "zod";
-import type { BaseMessage } from "@langchain/core/messages";
+import { trimMessages, type BaseMessage } from "@langchain/core/messages";
 import { chat } from "../models";
+import { estimateTokens } from "../cache";
 import { plainSystem } from "../cache";
 import { TRIAGE_PROMPT } from "../prompts/triage";
 import type { AgentStateType, Intent } from "../state";
@@ -37,16 +38,36 @@ export function lastUserText(state: AgentStateType): string {
 }
 
 /**
+ * Token budget for the prior-turn text hint below, not a message count —
+ * a fixed "last N messages" cutoff either truncates a short exchange
+ * needlessly or lets one giant message dominate. 1500 tokens covers several
+ * normal turns of chat while staying cheap even on a long-running thread.
+ */
+export const CONVERSATION_CONTEXT_MAX_TOKENS = 1500;
+
+/**
  * Prior turns give a planner/classifier the context to resolve a bare
  * "Tokyo" or a follow-up like "actually nonstop only". Exported so other
- * nodes (e.g. plan-search's planner) can reuse the same convention instead
- * of duplicating it.
+ * nodes (e.g. plan-search's and plan-discovery's planners) can reuse the
+ * same convention instead of duplicating it. This is a secondary
+ * disambiguation hint, not the system's primary memory — sticky SearchPlan
+ * fields (state.ts's mergeSearchPlan) are the source of truth for what
+ * carries forward turn to turn; this text window just helps a planner
+ * resolve a new bare reference against recent chat.
  */
-export function conversationContext(state: AgentStateType): string {
+export async function conversationContext(state: AgentStateType): Promise<string> {
   const messages = (state.messages ?? []) as BaseMessage[];
-  const prior = messages.slice(0, -1).slice(-4);
+  const prior = messages.slice(0, -1);
   if (prior.length === 0) return "";
-  return prior
+
+  const trimmed = await trimMessages(prior, {
+    maxTokens: CONVERSATION_CONTEXT_MAX_TOKENS,
+    tokenCounter: (msgs) =>
+      msgs.reduce((sum, m) => sum + estimateTokens(flattenContent(m.content)), 0),
+    strategy: "last",
+  });
+
+  return trimmed
     .map(
       (m) =>
         `${m._getType() === "human" ? "User" : "Assistant"}: ${flattenContent(m.content).slice(0, 300)}`,
@@ -58,7 +79,7 @@ export async function triage(
   state: AgentStateType,
 ): Promise<Partial<AgentStateType>> {
   const text = lastUserText(state);
-  const context = conversationContext(state);
+  const context = await conversationContext(state);
 
   const model = chat({ effort: "low", disableThinking: true }).withStructuredOutput(
     triageSchema,
