@@ -13,25 +13,33 @@ export const guardSchema = z.object({
 });
 
 /**
- * Search-derived state from a prior turn must not leak into a new turn.
- * guardInput runs first on every turn (guard_input is the graph's entry
- * node), and the knowledge branch (triage -> retrieve_knowledge ->
- * synthesize) never writes these channels itself — so with the production
+ * Search-derived state from a prior turn must not leak into a new turn that
+ * doesn't search. guardInput runs first on every turn (guard_input is the
+ * graph's entry node), and the knowledge branch (triage -> retrieve_knowledge
+ * -> synthesize) never writes these channels itself — so with the production
  * MongoDBSaver checkpointer restoring full thread state, a turn that doesn't
- * search would otherwise inherit the previous turn's awardResults,
- * tripSummaries, and searchPlan wholesale. Spread onto every return path
- * below so a new turn always starts clean. refusalReason defaults to null
- * here too — only the explicit-rejection path below overrides it with a
- * real reason, by spreading this first and setting refusalReason after.
+ * search would otherwise inherit the previous turn's awardResults and
+ * tripSummaries wholesale. Spread onto every return path below so a new turn
+ * always starts clean. refusalReason defaults to null here too — only the
+ * explicit-rejection path below overrides it with a real reason, by
+ * spreading this first and setting refusalReason after.
+ *
+ * searchPlan is deliberately NOT reset here, unlike the fields above. Unlike
+ * awardResults/tripSummaries (raw search output, genuinely stale once a new
+ * turn starts), searchPlan is the conversation's short-term memory of trip
+ * criteria (origin, destination, dates, cabin) — it needs to survive a turn
+ * that doesn't search at all (e.g. "only business or first", which names no
+ * new origin/destination) so plan-search/plan-discovery can carry it forward
+ * via searchPlan's merge reducer (state.ts). Resetting it here would erase
+ * that memory before triage has even determined whether this turn searches.
  *
  * revisionCount and refreshedAt (added in Phase 5) must reset here too, for
- * the same cross-turn-leak reason: without a reset, a stale revisionCount
- * would eat into the next turn's retry budget, and a stale refreshedAt would
- * make a turn that never refreshed falsely claim it re-confirmed with the
- * provider.
+ * the same cross-turn-leak reason as awardResults/tripSummaries: without a
+ * reset, a stale revisionCount would eat into the next turn's retry budget,
+ * and a stale refreshedAt would make a turn that never refreshed falsely
+ * claim it re-confirmed with the provider.
  */
 const RESET_TURN_STATE: Partial<AgentStateType> = {
-  searchPlan: null,
   awardResults: [],
   tripSummaries: [],
   kbDocs: [],
