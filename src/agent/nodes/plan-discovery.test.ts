@@ -33,6 +33,20 @@ function stateWith(text: string): AgentStateType {
   return { messages: [new HumanMessage(text)] } as AgentStateType;
 }
 
+/**
+ * `AgentStateUpdate`'s `searchPlan` field is typed as
+ * `Partial<SearchPlan> | null | OverwriteValue<SearchPlan | null>` because
+ * LangGraph's `Annotation()` unions every custom-reducer channel's update
+ * type with an internal overwrite marker. planDiscovery never returns that
+ * marker, so this narrows the type down to what these tests actually deal
+ * with instead of asserting it at every call site.
+ */
+function planOf(
+  result: Awaited<ReturnType<typeof planDiscovery>>,
+): Partial<SearchPlan> | null | undefined {
+  return result.searchPlan as Partial<SearchPlan> | null | undefined;
+}
+
 describe("capProbes", () => {
   it("enforces the budget in code, not by asking the model nicely", () => {
     const probes = Array.from({ length: 20 }, (_, i) => ({ program: `p${i}` }));
@@ -59,8 +73,9 @@ describe("capProbes", () => {
 });
 
 describe("discoveryPlanSchema", () => {
-  it("requires an origin", () => {
-    expect(() => discoveryPlanSchema.parse({ probes: [] })).toThrow();
+  it("allows omitting origin so a follow-up can carry the prior one forward", () => {
+    const p = discoveryPlanSchema.parse({ probes: [] });
+    expect(p.origin).toBeUndefined();
   });
 
   it("accepts a plan with probes", () => {
@@ -124,8 +139,8 @@ describe("planDiscovery place resolution", () => {
 
     const result = await planDiscovery(stateWith("where should I go from Nowhereville this fall?"));
 
-    expect(result.searchPlan?.unresolvedPlaces).toContain("Nowhereville");
-    expect(result.searchPlan?.origins).toEqual([]);
+    expect(planOf(result)?.unresolvedPlaces).toContain("Nowhereville");
+    expect(planOf(result)?.origins).toEqual([]);
   });
 
   it("[BUG-DROPPED-PLACE] carries an ambiguous origin's candidates onto the plan instead of silently collapsing to no origins", async () => {
@@ -142,11 +157,11 @@ describe("planDiscovery place resolution", () => {
 
     const result = await planDiscovery(stateWith("where should I go from London this fall?"));
 
-    expect(result.searchPlan?.ambiguousPlaces).toContainEqual({
+    expect(planOf(result)?.ambiguousPlaces).toContainEqual({
       query: "London",
       candidates: ["London, United Kingdom", "London, Canada"],
     });
-    expect(result.searchPlan?.origins).toEqual([]);
+    expect(planOf(result)?.origins).toEqual([]);
   });
 
   it("[BUG-MISSING-DISABLE-THINKING] disables thinking for its structured-output call, like plan-search.ts and guard.ts do", async () => {
@@ -179,8 +194,51 @@ describe("planDiscovery place resolution", () => {
 
     const result = await planDiscovery(stateWith("where should I go from Chicago this fall?"));
 
-    expect(result.searchPlan?.unresolvedPlaces).toBeUndefined();
-    expect(result.searchPlan?.ambiguousPlaces).toBeUndefined();
-    expect(result.searchPlan?.origins).toEqual(["ORD", "MDW"]);
+    expect(planOf(result)?.unresolvedPlaces).toBeUndefined();
+    expect(planOf(result)?.ambiguousPlaces).toBeUndefined();
+    expect(planOf(result)?.origins).toEqual(["ORD", "MDW"]);
+  });
+
+  it("omits origins entirely when the current turn doesn't name one, instead of collapsing to no origins", async () => {
+    mockPlannerResponse({
+      probes: [{ program: "aeroplan", destinationRegion: "Europe", cabin: "business" }],
+    });
+
+    const result = await planDiscovery(stateWith("only business or first"));
+
+    expect(result.searchPlan).not.toHaveProperty("origins");
+    expect(resolveLocation).not.toHaveBeenCalled();
+  });
+
+  it("omits destinations so a prior route-search's destination survives the reducer merge", async () => {
+    mockPlannerResponse({
+      origin: "Chicago",
+      probes: [{ program: "aeroplan", destinationRegion: "Europe", cabin: "business" }],
+    });
+    vi.mocked(resolveLocation).mockReturnValue({
+      kind: "airports",
+      iatas: ["ORD"],
+      label: "Chicago",
+    });
+
+    const result = await planDiscovery(stateWith("where should I go from Chicago this fall?"));
+
+    expect(result.searchPlan).not.toHaveProperty("destinations");
+  });
+
+  it("does not force nonstopOnly to false, letting a prior route-search's nonstop constraint survive", async () => {
+    mockPlannerResponse({
+      origin: "Chicago",
+      probes: [{ program: "aeroplan", destinationRegion: "Europe", cabin: "business" }],
+    });
+    vi.mocked(resolveLocation).mockReturnValue({
+      kind: "airports",
+      iatas: ["ORD"],
+      label: "Chicago",
+    });
+
+    const result = await planDiscovery(stateWith("where should I go from Chicago this fall?"));
+
+    expect(result.searchPlan).not.toHaveProperty("nonstopOnly");
   });
 });
