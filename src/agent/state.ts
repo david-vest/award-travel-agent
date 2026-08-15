@@ -74,33 +74,24 @@ const replace = <T>(defaultValue: () => T) => ({
  * discoveryProbes) are the opposite: they always take the update's value,
  * even when that's undefined, because a stale diagnostic from three turns
  * ago must never resurface on an unrelated turn.
- *
- * Until Task 5 removes guard.ts's RESET_TURN_STATE's `searchPlan: null`,
- * guard_input runs on every turn and can emit null as the update. Treating
- * a null update as "no fields specified" (preserving current's sticky fields)
- * maintains carry-forward semantics through Tasks 2-4. After Task 5 lands,
- * update will always be Partial<SearchPlan> (never null), and this branch
- * becomes unreachable dead code.
  */
 function mergeSearchPlan(
   current: SearchPlan | null,
-  update: Partial<SearchPlan> | null,
+  update: Partial<SearchPlan>,
 ): SearchPlan {
-  // Treat null update as "no fields specified this turn" — preserve current's sticky fields.
-  const actualUpdate = update || {};
   const merged: SearchPlan = {
-    origins: actualUpdate.origins ?? current?.origins ?? [],
-    destinations: actualUpdate.destinations ?? current?.destinations ?? [],
-    destinationRegion: actualUpdate.destinationRegion ?? current?.destinationRegion,
-    startDate: actualUpdate.startDate ?? current?.startDate,
-    endDate: actualUpdate.endDate ?? current?.endDate,
-    cabins: actualUpdate.cabins ?? current?.cabins ?? [],
-    nonstopOnly: actualUpdate.nonstopOnly ?? current?.nonstopOnly ?? false,
-    programs: actualUpdate.programs ?? current?.programs ?? [],
-    rationale: actualUpdate.rationale,
-    unresolvedPlaces: actualUpdate.unresolvedPlaces,
-    ambiguousPlaces: actualUpdate.ambiguousPlaces,
-    discoveryProbes: actualUpdate.discoveryProbes,
+    origins: update.origins ?? current?.origins ?? [],
+    destinations: update.destinations ?? current?.destinations ?? [],
+    destinationRegion: update.destinationRegion ?? current?.destinationRegion,
+    startDate: update.startDate ?? current?.startDate,
+    endDate: update.endDate ?? current?.endDate,
+    cabins: update.cabins ?? current?.cabins ?? [],
+    nonstopOnly: update.nonstopOnly ?? current?.nonstopOnly ?? false,
+    programs: update.programs ?? current?.programs ?? [],
+    rationale: update.rationale,
+    unresolvedPlaces: update.unresolvedPlaces,
+    ambiguousPlaces: update.ambiguousPlaces,
+    discoveryProbes: update.discoveryProbes,
   };
   if (!merged.startDate && !merged.endDate) {
     const today = new Date();
@@ -121,7 +112,7 @@ export const AgentState = Annotation.Root({
   intent: Annotation<Intent | null>(replace<Intent | null>(() => null)),
   refusalReason: Annotation<string | null>(replace<string | null>(() => null)),
 
-  searchPlan: Annotation<SearchPlan | null, Partial<SearchPlan> | null>({
+  searchPlan: Annotation<SearchPlan | null, Partial<SearchPlan>>({
     reducer: mergeSearchPlan,
     default: () => null,
   }),

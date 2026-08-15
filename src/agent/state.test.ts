@@ -111,18 +111,4 @@ describe("searchPlan merge reducer", () => {
     expect(merged.startDate).toBe("2026-09-15");
     expect(merged.endDate).toBe("2026-09-18");
   });
-
-  it("treats a null update (from guard.ts until Task 5) as no-op, preserving all sticky fields", () => {
-    // Until Task 5 removes guard.ts's RESET_TURN_STATE's `searchPlan: null`,
-    // guard_input emits null on every turn. Treating it as "no fields specified"
-    // preserves the previous turn's plan, maintaining carry-forward semantics.
-    const merged = asAggregate(AgentState.spec.searchPlan).operator(base, null)!;
-    expect(merged.origins).toEqual(["ORD"]);
-    expect(merged.destinations).toEqual(["TLS"]);
-    expect(merged.startDate).toBe("2026-09-15");
-    expect(merged.endDate).toBe("2026-09-18");
-    expect(merged.cabins).toEqual(["business", "first"]);
-    expect(merged.nonstopOnly).toBe(false);
-    expect(merged.programs).toEqual([]);
-  });
 });
