@@ -52,4 +52,53 @@ describe("rankRecommendations", () => {
     } as unknown as AgentStateType);
     expect(result.recommendations?.map((item) => item.id)).toEqual(["same:economy", "same:business"]);
   });
+
+  it("ranks a cheaper-fee, higher-miles option above an expensive-fee, lower-miles option", async () => {
+    const result = await rankRecommendations({
+      searchPlan: { origins: ["MIA"], destinations: ["CDG"], cabins: ["business"], nonstopOnly: false, programs: [] },
+      awardResults: [
+        { availabilityId: "ba", origin: "JFK", destination: "CDG", date: "2026-09-18", program: "british_airways", cabin: "business", miles: 45000, taxes: 1000, taxesCurrency: "USD", direct: true, airlines: "BA" },
+        { availabilityId: "alaska", origin: "MIA", destination: "CDG", date: "2026-09-18", program: "alaska", cabin: "business", miles: 55000, taxes: 50, taxesCurrency: "USD", direct: true, airlines: "AF" },
+      ],
+      tripSummaries: [],
+    } as unknown as AgentStateType);
+
+    expect(result.recommendations?.[0].id).toBe("alaska:business");
+  });
+
+  it("falls back to the search result's own taxes when no trip was enriched", async () => {
+    const result = await rankRecommendations({
+      searchPlan: { origins: ["SFO"], destinations: ["HND"], cabins: ["business"], nonstopOnly: false, programs: [] },
+      awardResults: [
+        { availabilityId: "unenriched", origin: "SFO", destination: "HND", date: "2026-09-18", program: "united", cabin: "business", miles: 60000, taxes: 112.9, taxesCurrency: "USD", direct: true, airlines: "UA" },
+      ],
+      tripSummaries: [],
+    } as unknown as AgentStateType);
+
+    expect(result.recommendations?.[0].taxes).toEqual({ amount: 112.9, currency: "USD" });
+  });
+
+  it("includes a taxes-and-fees score factor", async () => {
+    const result = await rankRecommendations({
+      searchPlan: { origins: ["SFO"], destinations: ["HND"], cabins: ["business"], nonstopOnly: false, programs: [] },
+      awardResults: [
+        { availabilityId: "priced", origin: "SFO", destination: "HND", date: "2026-09-18", program: "united", cabin: "business", miles: 60000, taxes: 112.9, taxesCurrency: "USD", direct: true, airlines: "UA" },
+      ],
+      tripSummaries: [],
+    } as unknown as AgentStateType);
+
+    expect(result.recommendations?.[0].scoreFactors).toContainEqual({ label: "Taxes & fees", value: "$112.90" });
+  });
+
+  it("still excludes an option whose unenriched taxes exceed maxTaxesFeesUsd", async () => {
+    const result = await rankRecommendations({
+      searchPlan: { origins: ["SFO"], destinations: ["HND"], cabins: ["business"], nonstopOnly: false, programs: [], maxTaxesFeesUsd: 100 },
+      awardResults: [
+        { availabilityId: "over-budget", origin: "SFO", destination: "HND", date: "2026-09-18", program: "united", cabin: "business", miles: 60000, taxes: 250, taxesCurrency: "USD", direct: true, airlines: "UA" },
+      ],
+      tripSummaries: [],
+    } as unknown as AgentStateType);
+
+    expect(result.recommendations).toHaveLength(0);
+  });
 });

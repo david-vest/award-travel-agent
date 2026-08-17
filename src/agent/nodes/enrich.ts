@@ -6,6 +6,18 @@ import { ENRICH_PROMPT } from "../prompts/enrich";
 import type { AgentStateType } from "../state";
 import { ENRICH_TOP_N, getClient } from "./search";
 
+/**
+ * How many ranked results get full trip detail (connections, schedule,
+ * duration, flight numbers, taxes). Wider than ENRICH_TOP_N — the model only
+ * ever sees and chooses among the top ENRICH_TOP_N candidates; everything up
+ * to this cap that the model didn't pick is still backfilled deterministically
+ * below, so a card past the model's shortlist isn't left showing "pending".
+ */
+export const ENRICH_DISPLAY_CAP = 20;
+
+/** Small enough to avoid a rate-limit burst while still fetching the backfill quickly. */
+const BACKFILL_CONCURRENCY = 3;
+
 export type ToolCallLike = { name: string; args: Record<string, unknown> };
 
 /**
@@ -44,14 +56,16 @@ export function describeCandidates(options: AwardOption[]): string {
 
 /**
  * The one node in this graph where the model genuinely decides whether to
- * call a tool. Safe here because the candidate list is capped at
- * ENRICH_TOP_N before the model ever sees it — the worst case is a handful of
- * wasted lookups, not an unbounded bill.
+ * call a tool — but only for the top ENRICH_TOP_N candidates it's shown.
+ * Everything else up to ENRICH_DISPLAY_CAP that the model didn't pick is
+ * backfilled deterministically below, so a card doesn't miss connection,
+ * schedule, or tax detail merely because the model chose not to check it.
  */
 export async function enrichTrips(
   state: AgentStateType,
 ): Promise<Partial<AgentStateType>> {
-  const top = (state.awardResults ?? []).slice(0, ENRICH_TOP_N);
+  const displayed = (state.awardResults ?? []).slice(0, ENRICH_DISPLAY_CAP);
+  const top = displayed.slice(0, ENRICH_TOP_N);
   if (top.length === 0) return { tripSummaries: [] };
 
   let response: { tool_calls?: ToolCallLike[] };
@@ -72,16 +86,13 @@ export async function enrichTrips(
     response.tool_calls ?? [],
     top.map((o) => o.availabilityId),
   );
-  if (ids.length === 0) return { tripSummaries: [] };
 
   const summaries: TripSummary[] = [];
   const requestedCabins = state.searchPlan?.cabins;
 
-  // Sequential rather than parallel: a burst of up to five is a fast way to
-  // trip the rate limiter, and the latency difference is not user-visible.
-  for (const id of ids) {
+  async function lookup(availabilityId: string): Promise<void> {
     try {
-      const raw = await tripsTool.invoke({ availabilityId: id });
+      const raw = await tripsTool.invoke({ availabilityId });
       const parsed = JSON.parse(raw) as { trips?: TripSummary[] };
       const trips = parsed.trips ?? [];
       // One availabilityId can bundle trips across every cabin seats.aero
@@ -94,8 +105,24 @@ export async function enrichTrips(
           : trips;
       summaries.push(...relevant);
     } catch {
-      continue; // enrichment is additive; its absence must not fail the turn
+      // enrichment is additive; its absence must not fail the turn
     }
+  }
+
+  // Sequential rather than parallel: a burst of up to five is a fast way to
+  // trip the rate limiter, and the latency difference is not user-visible.
+  for (const id of ids) {
+    await lookup(id);
+  }
+
+  // Backfill every displayed option the model didn't pick, in small batches
+  // so the burst doesn't trip the rate limiter the way one large parallel
+  // fetch would.
+  const pickedIds = new Set(ids);
+  const backfill = displayed.filter((o) => !pickedIds.has(o.availabilityId));
+  for (let start = 0; start < backfill.length; start += BACKFILL_CONCURRENCY) {
+    const batch = backfill.slice(start, start + BACKFILL_CONCURRENCY);
+    await Promise.all(batch.map((o) => lookup(o.availabilityId)));
   }
 
   const merged = new Map((state.tripSummaries ?? []).map((summary) => [`${summary.availabilityId}:${summary.tripId}`, summary]));

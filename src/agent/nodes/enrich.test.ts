@@ -15,7 +15,7 @@ vi.mock("../../tools", async (importOriginal) => {
 
 import { chat } from "../models";
 import { makeGetTripDetailsTool } from "../../tools";
-import { describeCandidates, idsFromToolCalls, enrichTrips } from "./enrich";
+import { describeCandidates, idsFromToolCalls, enrichTrips, ENRICH_DISPLAY_CAP } from "./enrich";
 
 const opt = (over: Partial<AwardOption> = {}): AwardOption => ({
   availabilityId: "a1",
@@ -196,5 +196,51 @@ describe("enrichTrips", () => {
     expect(ids).toContain("t-first");
     expect(ids).toContain("t-unknown"); // cabin-less trips are kept — we can't classify them
     expect(ids).not.toContain("t-economy");
+  });
+
+  it("backfills every displayed option the model didn't pick, not just the model's own candidates", async () => {
+    const toolInvoke = vi.fn().mockImplementation(({ availabilityId }: { availabilityId: string }) =>
+      Promise.resolve(JSON.stringify({
+        trips: [{ availabilityId, tripId: `t-${availabilityId}`, flightNumbers: [], aircraft: [], carriers: [], stops: 0 }],
+      })),
+    );
+    vi.mocked(makeGetTripDetailsTool).mockReturnValue({ invoke: toolInvoke } as never);
+    // The model only picks the first of three displayed options.
+    mockModelResponse({
+      tool_calls: [{ name: "get_trip_details", args: { availabilityId: "a1" } }],
+    });
+
+    const result = await enrichTrips({
+      awardResults: [opt({ availabilityId: "a1" }), opt({ availabilityId: "a2" }), opt({ availabilityId: "a3" })],
+    } as AgentStateType);
+
+    const ids = (result.tripSummaries ?? []).map((t) => t.availabilityId).sort();
+    expect(ids).toEqual(["a1", "a2", "a3"]);
+  });
+
+  it("does not look up an id twice when the model already picked it", async () => {
+    const toolInvoke = vi.fn().mockResolvedValue(JSON.stringify({ trips: [] }));
+    vi.mocked(makeGetTripDetailsTool).mockReturnValue({ invoke: toolInvoke } as never);
+    mockModelResponse({
+      tool_calls: [{ name: "get_trip_details", args: { availabilityId: "a1" } }],
+    });
+
+    await enrichTrips({
+      awardResults: [opt({ availabilityId: "a1" }), opt({ availabilityId: "a2" })],
+    } as AgentStateType);
+
+    const calledIds = toolInvoke.mock.calls.map((call) => (call[0] as { availabilityId: string }).availabilityId);
+    expect(calledIds.filter((id) => id === "a1")).toHaveLength(1);
+  });
+
+  it("caps backfill at the display limit rather than every remaining result", async () => {
+    const toolInvoke = vi.fn().mockResolvedValue(JSON.stringify({ trips: [] }));
+    vi.mocked(makeGetTripDetailsTool).mockReturnValue({ invoke: toolInvoke } as never);
+    mockModelResponse({ tool_calls: [] });
+
+    const many = Array.from({ length: 25 }, (_, i) => opt({ availabilityId: `a${i + 1}` }));
+    await enrichTrips({ awardResults: many } as AgentStateType);
+
+    expect(toolInvoke).toHaveBeenCalledTimes(ENRICH_DISPLAY_CAP);
   });
 });

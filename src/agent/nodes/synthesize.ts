@@ -6,6 +6,7 @@ import { lastUserText } from "./triage";
 import { probesFromPlan } from "./plan-discovery";
 import { destinationsForSearch } from "./search";
 import { displaySearchLocation } from "../../tools/seats-aero/multi-city-codes";
+import { awardProgramForSource, transferPartnersFor } from "../../domain/programs";
 
 // The writer needs the best choices, not every raw match. This matches the
 // number enriched with flight details and keeps broad searches concise.
@@ -152,6 +153,27 @@ export function buildSynthesisContext(state: AgentStateType): string {
           )
           .join("\n"),
     );
+
+    // Only meaningful for a structured form search, where the selected
+    // cards are known — a chat turn has no card selection to restrict by,
+    // so this block is omitted entirely rather than naming every card that
+    // could theoretically transfer to a shown program.
+    const selectedCards = state.tripRequest?.creditCardPrograms ?? [];
+    if (selectedCards.length > 0) {
+      const uniqueSources = [...new Set(options.map((o) => o.program))];
+      const transferLines = uniqueSources.flatMap((source) => {
+        const program = awardProgramForSource(source);
+        if (!program) return [];
+        const partners = transferPartnersFor(program.id, selectedCards);
+        if (partners.length === 0) return [];
+        return [`- ${program.name} (${source}): ${partners.map((p) => p.name).join(", ")}`];
+      });
+      if (transferLines.length > 0) {
+        parts.push(
+          `Card transfer partners for programs shown (only mention a card if it appears here; say nothing about transferring for a program not listed):\n${transferLines.join("\n")}`,
+        );
+      }
+    }
   }
 
   const trips = state.tripSummaries ?? [];

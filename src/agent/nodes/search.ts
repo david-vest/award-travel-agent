@@ -23,6 +23,7 @@ import {
   searchCodeForRegion,
 } from "../../tools/seats-aero/multi-city-codes";
 import type { AgentStateType, SearchAttempt, SearchPlan } from "../state";
+import { blendedCost } from "../points-value";
 import { lastUserText } from "./triage";
 
 export const ENRICH_TOP_N = 5;
@@ -89,19 +90,19 @@ export function prefersLowTaxes(text: string): boolean {
 }
 
 /**
- * Cheapest mileage first by default, with a modest nonstop bonus. When the
- * user explicitly prioritizes taxes, known tax totals come before unknown
- * ones and lower totals sort first when they use the same currency. We do not
- * compare unlike currencies without an exchange rate; mileage breaks those
- * ties instead.
+ * Cheapest blended points-plus-fees cost first by default (see points-value.ts),
+ * with a modest nonstop bonus. When the user explicitly prioritizes taxes,
+ * known tax totals come before unknown ones and lower totals sort first when
+ * they use the same currency. We do not compare unlike currencies without an
+ * exchange rate; blended cost breaks those ties instead.
  */
 export function rankOptions(
   options: AwardOption[],
   opts: { preferLowTaxes?: boolean } = {},
 ): AwardOption[] {
   const NONSTOP_BONUS = 0.9;
-  const mileageScore = (o: AwardOption) =>
-    o.miles * (o.direct ? NONSTOP_BONUS : 1);
+  const totalCost = (o: AwardOption) =>
+    blendedCost(o.miles, o.taxes, o.taxesCurrency) * (o.direct ? NONSTOP_BONUS : 1);
 
   return [...options].sort((a, b) => {
     if (opts.preferLowTaxes) {
@@ -117,7 +118,7 @@ export function rankOptions(
         return (a.taxes as number) - (b.taxes as number);
       }
     }
-    return mileageScore(a) - mileageScore(b);
+    return totalCost(a) - totalCost(b);
   });
 }
 

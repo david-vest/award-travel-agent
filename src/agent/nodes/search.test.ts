@@ -206,6 +206,14 @@ describe("rankOptions", () => {
   it("enriches exactly five options", () => {
     expect(ENRICH_TOP_N).toBe(5);
   });
+
+  it("prefers a higher-mileage, low-fee option over a lower-mileage, high-fee one even without an explicit tax preference", () => {
+    const r = rankOptions([
+      opt({ availabilityId: "ba", miles: 45_000, taxes: 1_000, taxesCurrency: "USD", direct: true }),
+      opt({ availabilityId: "alaska", miles: 55_000, taxes: 50, taxesCurrency: "USD", direct: true }),
+    ]);
+    expect(r[0].availabilityId).toBe("alaska");
+  });
 });
 
 describe("prefersLowTaxes", () => {

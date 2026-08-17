@@ -55,7 +55,7 @@ export default function Home() {
   const [destinations, setDestinations] = useState(destinationInitial);
   const [startDate, setStartDate] = useState("2026-09-18");
   const [endDate, setEndDate] = useState("2026-09-27");
-  const [flexDays, setFlexDays] = useState(2);
+  const [flexDays, setFlexDays] = useState(0);
   const [cabins, setCabins] = useState<Cabin[]>(["business"]);
   const [travelers, setTravelers] = useState("1 traveler");
   const [selectedCreditPrograms, setSelectedCreditPrograms] = useState<CreditCardProgramId[]>(["chase", "amex"]);

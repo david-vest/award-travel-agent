@@ -50,6 +50,28 @@ describe("buildSynthesisContext", () => {
     expect(ctx).toContain("taxesCurrency=USD");
   });
 
+  it("names the selected card that transfers to the shown option's program", () => {
+    const ctx = buildSynthesisContext(
+      state({ tripRequest: { creditCardPrograms: ["chase"] } as never }),
+    );
+    expect(ctx).toContain("Air Canada Aeroplan");
+    expect(ctx).toContain("Chase");
+  });
+
+  it("omits a selected card that does not transfer to the shown option's program", () => {
+    // Citi does not transfer to Aeroplan.
+    const ctx = buildSynthesisContext(
+      state({ tripRequest: { creditCardPrograms: ["citi"] } as never }),
+    );
+    expect(ctx).not.toContain("Citi");
+    expect(ctx).not.toContain("transfer partner");
+  });
+
+  it("omits transfer-partner context entirely for a chat turn with no card selection", () => {
+    const ctx = buildSynthesisContext(state());
+    expect(ctx).not.toContain("transfer partner");
+  });
+
   it("supplies only the five highest-ranked options and labels the full count", () => {
     const options = Array.from({ length: 7 }, (_, i) => ({
       ...state().awardResults[0],

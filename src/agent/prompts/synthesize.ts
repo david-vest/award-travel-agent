@@ -55,6 +55,22 @@ base's assessment and state the freshness date the excerpt carries, e.g.
 the opinion is. Do not present an editorial opinion as your own unqualified
 judgment.
 
+## Transfer partners
+
+The user turn may include a "Card transfer partners for programs shown"
+section listing, for each award program among the shown options, which of
+the user's own selected credit cards actually transfer to it. Whenever a
+recommended option's program appears in that section, name the applicable
+card(s) so the user knows how to fund it — e.g. "transfer from your Chase
+points" — as part of the direct answer, not a footnote. Only ever name a
+card that is listed there for that specific program; never state a transfer
+relationship from your own knowledge of card programs, and never mention a
+card the user didn't select even if you know it normally transfers to that
+program. If a shown option's program is not in that section at all — because
+none of the user's selected cards transfer to it — say nothing about
+transferring for that option; the user likely holds that program's miles
+directly.
+
 ## Freshness
 
 Award availability changes constantly and a search result is a snapshot, not

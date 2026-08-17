@@ -3,6 +3,18 @@ import { awardProgramForSource } from "../../domain/programs";
 import type { AwardOption, TripSummary } from "../../tools";
 import type { AgentStateType } from "../state";
 import { filterByPointBalances } from "./search";
+import { blendedCost } from "../points-value";
+
+/** Trip-detail taxes are the confirmed figure; the search result's own taxes are the best fallback before enrichment has run. */
+function effectiveTaxes(option: AwardOption, trip?: TripSummary): { amount: number; currency: string } | undefined {
+  if (trip?.totalTaxes != null) return { amount: trip.totalTaxes, currency: trip.taxesCurrency ?? "USD" };
+  if (option.taxes != null) return { amount: option.taxes, currency: option.taxesCurrency ?? "USD" };
+  return undefined;
+}
+
+function formatUsd(amount: number): string {
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(amount);
+}
 
 function primaryCarrier(option: AwardOption, trip?: TripSummary): string[] {
   const carriers = trip?.carriers?.length ? trip.carriers : option.airlines.split(",");
@@ -35,10 +47,14 @@ export async function rankRecommendations(
   const budgetEligibleOptions = plan ? filterByPointBalances(state.awardResults ?? [], plan) : (state.awardResults ?? []);
   const scored = budgetEligibleOptions.map((option) => {
     const trip = tripByAvailability.get(option.availabilityId);
-    if (plan?.maxTaxesFeesUsd != null && trip?.totalTaxes != null && (trip.taxesCurrency ?? "USD") === "USD" && trip.totalTaxes > plan.maxTaxesFeesUsd) return null;
+    const taxes = effectiveTaxes(option, trip);
+    if (plan?.maxTaxesFeesUsd != null && taxes != null && taxes.currency === "USD" && taxes.amount > plan.maxTaxesFeesUsd) return null;
     const carriers = primaryCarrier(option, trip);
     const factors: FlightRecommendation["scoreFactors"] = [{ label: "Points", value: `${option.miles.toLocaleString()} miles` }];
-    let score = option.miles;
+    if (taxes != null) factors.push({ label: "Taxes & fees", value: taxes.currency === "USD" ? formatUsd(taxes.amount) : `${taxes.amount} ${taxes.currency}` });
+    // Blended so a lower-mileage, higher-fee option doesn't automatically
+    // outrank a higher-mileage, lower-fee one — see points-value.ts.
+    let score = blendedCost(option.miles, taxes?.amount, taxes?.currency);
 
     const tier = option.searchTier ?? "exact";
     score += POSITIONING_PENALTY[tier];
@@ -72,10 +88,10 @@ export async function rankRecommendations(
 
     const program = awardProgramForSource(option.program);
     factors.push({ label: "Program", value: program?.name ?? option.program });
-    return { option, trip, carriers, score, factors };
+    return { option, trip, carriers, score, factors, taxes };
   }).filter((item): item is NonNullable<typeof item> => item !== null && item.score < 1_000_000).sort((a, b) => a.score - b.score || a.option.miles - b.option.miles);
 
-  const recommendations: FlightRecommendation[] = scored.map(({ option, trip, carriers, factors }, index) => {
+  const recommendations: FlightRecommendation[] = scored.map(({ option, trip, carriers, factors, taxes }, index) => {
     const program = awardProgramForSource(option.program);
     const leading = index === 0;
     const tier = option.searchTier ?? "exact";
@@ -94,11 +110,11 @@ export async function rankRecommendations(
       date: option.date,
       cabin: option.cabin,
       miles: option.miles,
-      taxes: trip?.totalTaxes != null ? { amount: trip.totalTaxes, currency: trip.taxesCurrency ?? "USD" } : undefined,
+      taxes,
       program: { id: option.program, label: program?.name ?? option.program },
       carriers,
       direct: option.direct,
-      stops: trip?.stops,
+      stops: trip?.stops ?? (option.direct ? 0 : undefined),
       connections: trip?.connections,
       remainingSeats: option.remainingSeats ?? trip?.remainingSeats,
       departsAt: trip?.departsAt,
