@@ -1,6 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { z } from "zod";
-import { summarizeTrip, makeGetTripDetailsTool, type TripSummary } from "./trip-details";
+import {
+  summarizeTrip,
+  makeGetTripDetailsTool,
+  type TripSummary,
+} from "./trip-details";
+import { normalizeTaxes } from "./seats-aero/money";
 import type { Trip } from "./seats-aero/types";
 import type { SeatsAeroClient } from "./seats-aero";
 
@@ -9,6 +14,8 @@ const trip: Trip = {
   Stops: 0,
   Carriers: "NH",
   MileageCost: 87500,
+  TotalTaxes: 7340,
+  TaxesCurrency: "USD",
   Cabin: "business",
   AvailabilitySegments: [
     {
@@ -46,6 +53,12 @@ describe("summarizeTrip", () => {
     expect(summary.miles).toBe(87500);
   });
 
+  it("carries exact taxes and currency from the trip", () => {
+    const summary = summarizeTrip(trip, "avail-1");
+    expect(summary.taxes).toBe(73.4);
+    expect(summary.taxesCurrency).toBe("USD");
+  });
+
   it("dedupes carriers across segments", () => {
     const multi: Trip = {
       ...trip,
@@ -80,6 +93,21 @@ describe("summarizeTrip", () => {
       cabin: "economy",
       miles: 45000,
     });
+  });
+});
+
+describe("normalizeTaxes", () => {
+  it("converts provider minor units to a two-decimal currency amount", () => {
+    expect(normalizeTaxes(8980, "CAD")).toBe(89.8);
+    expect(normalizeTaxes(43720, "USD")).toBe(437.2);
+  });
+
+  it("does not divide zero-decimal currencies", () => {
+    expect(normalizeTaxes(8980, "JPY")).toBe(8980);
+  });
+
+  it("treats the provider's zero sentinel as unknown", () => {
+    expect(normalizeTaxes(0, "USD")).toBeUndefined();
   });
 });
 

@@ -1,21 +1,21 @@
-// src/agent/nodes/enrich.test.ts
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { AgentStateType } from "../state";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AwardOption } from "../../tools";
+import type { SeatsAeroClient } from "../../tools/seats-aero";
+import type { Trip } from "../../tools/seats-aero/types";
+import type { AgentStateType } from "../state";
 
-vi.mock("../models", () => ({ chat: vi.fn() }));
+const getClientMock = vi.fn();
+
 vi.mock("./search", () => ({
-  getClient: vi.fn().mockResolvedValue({}),
+  getClient: () => getClientMock(),
   ENRICH_TOP_N: 5,
 }));
-vi.mock("../../tools", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../tools")>();
-  return { ...actual, makeGetTripDetailsTool: vi.fn() };
-});
 
-import { chat } from "../models";
-import { makeGetTripDetailsTool } from "../../tools";
-import { describeCandidates, idsFromToolCalls, enrichTrips } from "./enrich";
+import {
+  DETAIL_LOOKUP_CONCURRENCY,
+  enrichTrips,
+  idsForEnrichment,
+} from "./enrich";
 
 const opt = (over: Partial<AwardOption> = {}): AwardOption => ({
   availabilityId: "a1",
@@ -30,171 +30,151 @@ const opt = (over: Partial<AwardOption> = {}): AwardOption => ({
   ...over,
 });
 
-describe("idsFromToolCalls", () => {
-  it("extracts availabilityId from a get_trip_details call", () => {
-    const ids = idsFromToolCalls(
-      [{ name: "get_trip_details", args: { availabilityId: "a1" } }],
-      ["a1"],
-    );
-    expect(ids).toEqual(["a1"]);
-  });
-
-  it("dedupes repeated calls to the same id", () => {
-    const ids = idsFromToolCalls(
-      [
-        { name: "get_trip_details", args: { availabilityId: "a1" } },
-        { name: "get_trip_details", args: { availabilityId: "a1" } },
-      ],
-      ["a1"],
-    );
-    expect(ids).toEqual(["a1"]);
-  });
-
-  it("ignores calls to a different tool", () => {
-    const ids = idsFromToolCalls(
-      [{ name: "some_other_tool", args: { availabilityId: "a1" } }],
-      ["a1"],
-    );
-    expect(ids).toEqual([]);
-  });
-
-  it("ignores a call with a missing or malformed id", () => {
-    const ids = idsFromToolCalls(
-      [
-        { name: "get_trip_details", args: {} },
-        { name: "get_trip_details", args: { availabilityId: 42 } },
-      ],
-      ["a1"],
-    );
-    expect(ids).toEqual([]);
-  });
-
-  it("returns an empty list when the model called nothing", () => {
-    expect(idsFromToolCalls([], ["a1"])).toEqual([]);
-  });
-
-  it("ignores an id that wasn't in the offered candidate list", () => {
-    // A hallucinated or otherwise malformed id must not trigger a lookup,
-    // even though it's shaped like a valid one.
-    const ids = idsFromToolCalls(
-      [{ name: "get_trip_details", args: { availabilityId: "hallucinated" } }],
-      ["a1", "a2"],
-    );
-    expect(ids).toEqual([]);
-  });
-
-  it("keeps only the subset of requested ids that were actually offered", () => {
-    const ids = idsFromToolCalls(
-      [
-        { name: "get_trip_details", args: { availabilityId: "a1" } },
-        { name: "get_trip_details", args: { availabilityId: "hallucinated" } },
-      ],
-      ["a1", "a2"],
-    );
-    expect(ids).toEqual(["a1"]);
-  });
+const trip = (over: Partial<Trip> = {}): Trip => ({
+  ID: "t1",
+  Cabin: "business",
+  MileageCost: 87500,
+  TotalTaxes: 7340,
+  TaxesCurrency: "USD",
+  Stops: 0,
+  Carriers: "NH",
+  AvailabilitySegments: [
+    {
+      FlightNumber: "NH12",
+      OriginAirport: "ORD",
+      DestinationAirport: "HND",
+      DepartsAt: "2026-09-14T11:00:00Z",
+      ArrivesAt: "2026-09-15T14:30:00Z",
+      AircraftName: "Boeing 777-300ER",
+    },
+  ],
+  ...over,
 });
 
-describe("describeCandidates", () => {
-  it("lists each option with its id, route, and price", () => {
-    const text = describeCandidates([opt()]);
-    expect(text).toContain("id=a1");
-    expect(text).toContain("ORD-NRT");
-    expect(text).toContain("87500");
+function clientWithTrips(
+  trips: SeatsAeroClient["trips"],
+): Pick<SeatsAeroClient, "trips"> {
+  return { trips };
+}
+
+describe("idsForEnrichment", () => {
+  it("keeps ranked order while deduping availability records", () => {
+    expect(
+      idsForEnrichment([
+        opt({ availabilityId: "a1", cabin: "business" }),
+        opt({ availabilityId: "a1", cabin: "first" }),
+        opt({ availabilityId: "a2" }),
+      ]),
+    ).toEqual(["a1", "a2"]);
   });
 
-  it("never leaks flight numbers or aircraft — that's what the tool call is for", () => {
-    const text = describeCandidates([opt()]);
-    expect(text).not.toMatch(/NH\d/);
-    expect(text.toLowerCase()).not.toContain("aircraft");
-  });
-
-  it("numbers options so the model can reference them unambiguously", () => {
-    const text = describeCandidates([
-      opt({ availabilityId: "a1" }),
-      opt({ availabilityId: "a2" }),
-    ]);
-    expect(text).toMatch(/^1\./m);
-    expect(text).toMatch(/^2\./m);
+  it("caps detail lookups at the enrichment budget", () => {
+    const options = Array.from({ length: 8 }, (_, index) =>
+      opt({ availabilityId: `a${index}` }),
+    );
+    expect(idsForEnrichment(options)).toHaveLength(5);
   });
 });
 
 describe("enrichTrips", () => {
   beforeEach(() => {
-    vi.mocked(chat).mockReset();
-    vi.mocked(makeGetTripDetailsTool).mockReset();
+    getClientMock.mockReset();
   });
 
-  /** Wires `chat(...).bindTools(...).invoke(...)` to resolve with `response`. */
-  function mockModelResponse(response: unknown) {
-    const invoke = vi.fn().mockResolvedValue(response);
-    const bindTools = vi.fn().mockReturnValue({ invoke });
-    vi.mocked(chat).mockReturnValue({ bindTools } as never);
-    return invoke;
-  }
+  it("returns immediately when no flight options exist", async () => {
+    const result = await enrichTrips({
+      awardResults: [],
+    } as unknown as AgentStateType);
+    expect(result).toEqual({ tripSummaries: [] });
+    expect(getClientMock).not.toHaveBeenCalled();
+  });
 
-  it("degrades to an empty result when the tool-selection model call fails", async () => {
-    // enrichment is additive; a transient API error here must not fail the turn
-    const invoke = vi.fn().mockRejectedValue(new Error("API down"));
-    vi.mocked(chat).mockReturnValue({
-      bindTools: vi.fn().mockReturnValue({ invoke }),
-    } as never);
-    vi.mocked(makeGetTripDetailsTool).mockReturnValue({
-      invoke: vi.fn(),
-    } as never);
+  it("deterministically fetches exact details for the ranked options", async () => {
+    const trips = vi.fn(async (id: string) => ({
+      data: [trip({ ID: `trip-${id}` })],
+    }));
+    getClientMock.mockResolvedValue(clientWithTrips(trips));
+
+    const result = await enrichTrips({
+      awardResults: [
+        opt({ availabilityId: "a1" }),
+        opt({ availabilityId: "a2" }),
+      ],
+      searchPlan: { cabins: ["business"] },
+    } as AgentStateType);
+
+    expect(trips).toHaveBeenCalledTimes(2);
+    expect(result.tripSummaries).toHaveLength(2);
+    expect(result.tripSummaries?.[0]).toMatchObject({
+      availabilityId: "a1",
+      taxes: 73.4,
+      taxesCurrency: "USD",
+      flightNumbers: ["NH12"],
+    });
+  });
+
+  it("drops trips outside the requested cabins", async () => {
+    getClientMock.mockResolvedValue(
+      clientWithTrips(async () => ({
+        data: [
+          trip({ ID: "economy", Cabin: "economy" }),
+          trip({ ID: "first", Cabin: "first" }),
+          trip({ ID: "unknown", Cabin: undefined }),
+        ],
+      })),
+    );
 
     const result = await enrichTrips({
       awardResults: [opt()],
-    } as AgentStateType);
-
-    expect(result).toEqual({ tripSummaries: [] });
-  });
-
-  it("only looks up ids that were actually offered as candidates", async () => {
-    const toolInvoke = vi.fn().mockResolvedValue(JSON.stringify({ trips: [] }));
-    vi.mocked(makeGetTripDetailsTool).mockReturnValue({
-      invoke: toolInvoke,
-    } as never);
-    mockModelResponse({
-      tool_calls: [
-        { name: "get_trip_details", args: { availabilityId: "a1" } },
-        { name: "get_trip_details", args: { availabilityId: "hallucinated" } },
-      ],
-    });
-
-    await enrichTrips({
-      awardResults: [opt({ availabilityId: "a1" })],
-    } as AgentStateType);
-
-    expect(toolInvoke).toHaveBeenCalledTimes(1);
-    expect(toolInvoke).toHaveBeenCalledWith({ availabilityId: "a1" });
-  });
-
-  it("drops trips outside the requested cabins so off-cabin noise doesn't reach synthesis", async () => {
-    const toolInvoke = vi.fn().mockResolvedValue(
-      JSON.stringify({
-        trips: [
-          { availabilityId: "a1", tripId: "t-economy", cabin: "economy", flightNumbers: ["AA1"], aircraft: [], carriers: [], stops: 1 },
-          { availabilityId: "a1", tripId: "t-first", cabin: "first", flightNumbers: ["AA2"], aircraft: [], carriers: [], stops: 1 },
-          { availabilityId: "a1", tripId: "t-unknown", flightNumbers: ["AA3"], aircraft: [], carriers: [], stops: 1 },
-        ],
-      }),
-    );
-    vi.mocked(makeGetTripDetailsTool).mockReturnValue({
-      invoke: toolInvoke,
-    } as never);
-    mockModelResponse({
-      tool_calls: [{ name: "get_trip_details", args: { availabilityId: "a1" } }],
-    });
-
-    const result = await enrichTrips({
-      awardResults: [opt({ availabilityId: "a1" })],
       searchPlan: { cabins: ["business", "first"] },
     } as AgentStateType);
 
-    const ids = (result.tripSummaries ?? []).map((t) => t.tripId);
-    expect(ids).toContain("t-first");
-    expect(ids).toContain("t-unknown"); // cabin-less trips are kept — we can't classify them
-    expect(ids).not.toContain("t-economy");
+    expect(result.tripSummaries?.map((summary) => summary.tripId)).toEqual([
+      "first",
+      "unknown",
+    ]);
+  });
+
+  it("continues when one detail lookup fails", async () => {
+    getClientMock.mockResolvedValue(
+      clientWithTrips(async (id) => {
+        if (id === "a1") throw new Error("temporary provider failure");
+        return { data: [trip({ ID: "working" })] };
+      }),
+    );
+
+    const result = await enrichTrips({
+      awardResults: [
+        opt({ availabilityId: "a1" }),
+        opt({ availabilityId: "a2" }),
+      ],
+    } as AgentStateType);
+
+    expect(result.tripSummaries?.map((summary) => summary.tripId)).toEqual([
+      "working",
+    ]);
+  });
+
+  it("limits concurrent provider calls to two", async () => {
+    let active = 0;
+    let maxActive = 0;
+    getClientMock.mockResolvedValue(
+      clientWithTrips(async (id) => {
+        active++;
+        maxActive = Math.max(maxActive, active);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        active--;
+        return { data: [trip({ ID: `trip-${id}` })] };
+      }),
+    );
+
+    await enrichTrips({
+      awardResults: Array.from({ length: 5 }, (_, index) =>
+        opt({ availabilityId: `a${index}` }),
+      ),
+    } as AgentStateType);
+
+    expect(DETAIL_LOOKUP_CONCURRENCY).toBe(2);
+    expect(maxActive).toBe(2);
   });
 });

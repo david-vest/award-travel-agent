@@ -184,7 +184,11 @@ describe("planDiscovery place resolution", () => {
 
     await planDiscovery(stateWith("where should I go from Chicago this fall?"));
 
-    expect(chat).toHaveBeenCalledWith({ effort: "low", disableThinking: true });
+    expect(chat).toHaveBeenCalledWith({
+      effort: "low",
+      maxTokens: 1_200,
+      disableThinking: true,
+    });
   });
 
   it("leaves unresolvedPlaces/ambiguousPlaces unset when the origin resolves cleanly", async () => {

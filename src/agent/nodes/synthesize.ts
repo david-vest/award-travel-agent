@@ -4,8 +4,12 @@ import { SYNTHESIZE_PROMPT } from "../prompts/synthesize";
 import type { AgentStateType } from "../state";
 import { lastUserText } from "./triage";
 import { probesFromPlan } from "./plan-discovery";
+import { destinationsForSearch } from "./search";
+import { displaySearchLocation } from "../../tools/seats-aero/multi-city-codes";
 
-const MAX_OPTIONS_IN_CONTEXT = 12;
+// The writer needs the best choices, not every raw match. This matches the
+// number enriched with flight details and keeps broad searches concise.
+const MAX_OPTIONS_IN_CONTEXT = 5;
 
 /**
  * Mirrors search.ts's own early-return conditions exactly: a knowledge intent
@@ -22,7 +26,48 @@ function searchWasAttempted(state: AgentStateType): boolean {
   const plan = state.searchPlan;
   if (!plan || plan.origins.length === 0) return false;
   if (state.intent === "discovery") return probesFromPlan(plan).length > 0;
-  return plan.destinations.length > 0;
+  return destinationsForSearch(plan.destinations, plan.destinationRegion).length > 0;
+}
+
+function formatDateWindow(start?: string, end?: string): string {
+  if (!start && !end) return "";
+  if (start === end || !end) return ` on ${start}`;
+  if (!start) return ` through ${end}`;
+  return ` from ${start} through ${end}`;
+}
+
+/** Guaranteed-short fallback for a flight request that produced no flights. */
+export function buildNoFlightsDraft(state: AgentStateType): string {
+  const plan = state.searchPlan;
+  if (state.searchStatus === "provider_error") {
+    return (
+      "I couldn't complete the flight search because seats.aero did not return a usable response. " +
+      "Would you like me to retry it?"
+    );
+  }
+
+  if (!searchWasAttempted(state) || !plan) {
+    const unresolved = plan?.unresolvedPlaces ?? [];
+    if (unresolved.length > 0) {
+      return `I couldn't search because I didn't recognize ${unresolved.join(", ")}. What airport, city, or seats.aero search code should I use instead?`;
+    }
+    return "I still need a searchable origin and destination. What airport, city, or seats.aero multi-city code should I use?";
+  }
+
+  const destinations = destinationsForSearch(plan.destinations, plan.destinationRegion);
+  const originText = plan.origins.map(displaySearchLocation).join(", ");
+  const destinationText = destinations.map(displaySearchLocation).join(", ");
+  const cabinText = plan.cabins.length > 0 ? ` in ${plan.cabins.join(" or ")}` : "";
+  const dateText = formatDateWindow(plan.startDate, plan.endDate);
+  const attemptText =
+    (state.searchAttempts ?? 0) > 1
+      ? `after ${state.searchAttempts} seats.aero searches`
+      : "after checking seats.aero";
+  return (
+    `I couldn't find award flights from ${originText} to ${destinationText}${cabinText}${dateText}, ` +
+    `${attemptText}. ` +
+    "Would you like me to widen the dates, change the cabin, or try specific airports?"
+  );
 }
 
 /**
@@ -58,7 +103,8 @@ export function buildSynthesisContext(state: AgentStateType): string {
     );
   }
 
-  const options = (state.awardResults ?? []).slice(0, MAX_OPTIONS_IN_CONTEXT);
+  const allOptions = state.awardResults ?? [];
+  const options = allOptions.slice(0, MAX_OPTIONS_IN_CONTEXT);
   if (options.length === 0) {
     if (state.intent === "knowledge") {
       parts.push("No availability search was performed for this question.");
@@ -73,12 +119,13 @@ export function buildSynthesisContext(state: AgentStateType): string {
     }
   } else {
     parts.push(
-      `Award options found (${options.length}):\n` +
+      `Top award options supplied (${options.length} of ${allOptions.length} returned):\n` +
         options
           .map(
             (o, i) =>
               `${i + 1}. id=${o.availabilityId} ${o.origin}-${o.destination} ${o.date} ` +
               `program=${o.program} cabin=${o.cabin} miles=${o.miles} ` +
+              `taxes=${o.taxes ?? "unknown"} taxesCurrency=${o.taxesCurrency ?? "unknown"} ` +
               `nonstop=${o.direct} airlines=${o.airlines} ` +
               `seats=${o.remainingSeats ?? "unknown"} dataUpdatedAt=${o.updatedAt ?? "unknown"}`,
           )
@@ -94,6 +141,7 @@ export function buildSynthesisContext(state: AgentStateType): string {
           .map(
             (t) =>
               `- for=${t.availabilityId} cabin=${t.cabin ?? "unknown"} miles=${t.miles ?? "unknown"} ` +
+              `taxes=${t.taxes ?? "unknown"} taxesCurrency=${t.taxesCurrency ?? "unknown"} ` +
               `flights=${t.flightNumbers.join(",")} aircraft=${t.aircraft.join(",")} ` +
               `stops=${t.stops} carriers=${t.carriers.join(",")}`,
           )
@@ -101,7 +149,8 @@ export function buildSynthesisContext(state: AgentStateType): string {
     );
   }
 
-  const docs = state.kbDocs ?? [];
+  const docs =
+    state.intent === "knowledge" || options.length > 0 ? (state.kbDocs ?? []) : [];
   if (docs.length > 0) {
     parts.push(
       `Knowledge base excerpts (cite by id in square brackets):\n` +
@@ -134,6 +183,10 @@ export function buildSynthesisContext(state: AgentStateType): string {
 export async function synthesize(
   state: AgentStateType,
 ): Promise<Partial<AgentStateType>> {
+  if (state.intent !== "knowledge" && (state.awardResults?.length ?? 0) === 0) {
+    return { draft: buildNoFlightsDraft(state) };
+  }
+
   const model = chat({ effort: "medium" });
 
   const res = await model.invoke([

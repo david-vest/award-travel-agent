@@ -50,9 +50,23 @@ describe("triage", () => {
     vi.mocked(chat).mockReset();
   });
 
-  it("falls back to knowledge intent when the model call throws, rather than failing the turn", async () => {
+  it("falls back to route_search for an obvious flight request when the model call throws", async () => {
     mockTriageRejection(new Error("OutputParserException: no tool call"));
     const result = await triage(state([new HumanMessage("business class to Tokyo")]));
+    expect(result).toEqual({ intent: "route_search" });
+    expect(chat).toHaveBeenCalledWith({
+      model: "haiku",
+      effort: "low",
+      maxTokens: 256,
+      disableThinking: true,
+    });
+  });
+
+  it("keeps a pure knowledge fallback when no search signal is present", async () => {
+    mockTriageRejection(new Error("API down"));
+    const result = await triage(
+      state([new HumanMessage("Can Chase points transfer to Alaska?")]),
+    );
     expect(result).toEqual({ intent: "knowledge" });
   });
 });

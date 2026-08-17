@@ -81,10 +81,12 @@ export async function triage(
   const text = lastUserText(state);
   const context = await conversationContext(state);
 
-  const model = chat({ effort: "low", disableThinking: true }).withStructuredOutput(
-    triageSchema,
-    { name: "triage_decision" },
-  );
+  const model = chat({
+    model: "haiku",
+    effort: "low",
+    maxTokens: 256,
+    disableThinking: true,
+  }).withStructuredOutput(triageSchema, { name: "triage_decision" });
 
   // Conversation context goes in the USER turn, never the system prompt —
   // it changes every request and would invalidate any cached prefix.
@@ -104,6 +106,22 @@ export async function triage(
 
     return { intent: result.intent as Intent };
   } catch {
+    // A classifier outage must not turn an obvious availability request into
+    // a knowledge-only answer. Prefer the existing structured trip memory,
+    // then use a conservative text heuristic before falling back to knowledge.
+    if (state.searchPlan) return { intent: "route_search" };
+    if (/\b(where (?:can|should)|somewhere|trip ideas?|inspiration)\b/i.test(text)) {
+      return { intent: "discovery" };
+    }
+    if (
+      /\b(flights?|availability|nonstop|direct)\b/i.test(text) ||
+      /\b(business class|first class|economy|premium economy)\b.*\b(to|from)\b/i.test(
+        text,
+      ) ||
+      /\bfrom\b.+\bto\b/i.test(text)
+    ) {
+      return { intent: "route_search" };
+    }
     return { intent: "knowledge" };
   }
 }

@@ -13,8 +13,13 @@ import { normalizeResults, type AwardOption } from "../../tools";
 import { mongoClient, DB_NAME } from "../../rag/store";
 import { probesFromPlan } from "./plan-discovery";
 import { AIRPORTS } from "../../tools/locations/data";
-import type { Region } from "../../tools/seats-aero/types";
+import { MILEAGE_PROGRAMS, type Region } from "../../tools/seats-aero/types";
+import {
+  resolveSeatsAeroSearchCode,
+  searchCodeForRegion,
+} from "../../tools/seats-aero/multi-city-codes";
 import type { AgentStateType } from "../state";
+import { lastUserText } from "./triage";
 
 export const ENRICH_TOP_N = 5;
 
@@ -55,17 +60,44 @@ export async function getClient(
   return withTracing(withResponseCache(inner, cacheStore));
 }
 
-/**
- * Cheapest first, with a nonstop preference expressed as a mileage discount
- * rather than a hard sort key — so a nonstop wins a tie but not a 3x premium.
- */
-export function rankOptions(options: AwardOption[]): AwardOption[] {
-  const NONSTOP_BONUS = 0.9;
-  return [...options].sort(
-    (a, b) =>
-      a.miles * (a.direct ? NONSTOP_BONUS : 1) -
-      b.miles * (b.direct ? NONSTOP_BONUS : 1),
+/** Detects when fees, rather than mileage alone, are an explicit priority. */
+export function prefersLowTaxes(text: string): boolean {
+  return /\b(?:low(?:est)?|minimi[sz]e|avoid|reduce|cheap(?:est)?)(?:\s+\w+){0,2}\s+(?:tax(?:es)?|fees?|surcharges?)\b|\b(?:tax(?:es)?|fees?|surcharges?)\s+(?:are\s+)?(?:low(?:est)?|minimal|cheap(?:est)?)\b/i.test(
+    text,
   );
+}
+
+/**
+ * Cheapest mileage first by default, with a modest nonstop bonus. When the
+ * user explicitly prioritizes taxes, known tax totals come before unknown
+ * ones and lower totals sort first when they use the same currency. We do not
+ * compare unlike currencies without an exchange rate; mileage breaks those
+ * ties instead.
+ */
+export function rankOptions(
+  options: AwardOption[],
+  opts: { preferLowTaxes?: boolean } = {},
+): AwardOption[] {
+  const NONSTOP_BONUS = 0.9;
+  const mileageScore = (o: AwardOption) =>
+    o.miles * (o.direct ? NONSTOP_BONUS : 1);
+
+  return [...options].sort((a, b) => {
+    if (opts.preferLowTaxes) {
+      const aKnown = a.taxes !== undefined && Boolean(a.taxesCurrency);
+      const bKnown = b.taxes !== undefined && Boolean(b.taxesCurrency);
+      if (aKnown !== bKnown) return aKnown ? -1 : 1;
+      if (
+        aKnown &&
+        bKnown &&
+        a.taxesCurrency?.toUpperCase() === b.taxesCurrency?.toUpperCase() &&
+        a.taxes !== b.taxes
+      ) {
+        return (a.taxes as number) - (b.taxes as number);
+      }
+    }
+    return mileageScore(a) - mileageScore(b);
+  });
 }
 
 /**
@@ -90,26 +122,56 @@ export function filterByCabins(
  * resolved — this should not normally trigger.
  */
 export function regionForOrigin(iata: string | undefined): Region {
+  const searchCode = iata ? resolveSeatsAeroSearchCode(iata) : undefined;
+  if (searchCode) return searchCode.region;
   const found = iata ? AIRPORTS.find((a) => a.iata === iata) : undefined;
   return found ? found.region : "North America";
+}
+
+function supportedPrograms(programs: string[]): string[] {
+  return programs.filter((program) =>
+    (MILEAGE_PROGRAMS as readonly string[]).includes(program),
+  );
+}
+
+/**
+ * A route plan normally has concrete destination codes. A broad region is
+ * also searchable when seats.aero publishes a provider-native multi-city
+ * code (for example Europe -> EUR). Keeping this fallback here makes older
+ * checkpointed plans usable even if they were created before planSearch
+ * started materializing that code in `destinations`.
+ */
+export function destinationsForSearch(
+  destinations: string[],
+  destinationRegion?: string,
+): string[] {
+  if (destinations.length > 0) return destinations;
+  const code = searchCodeForRegion(destinationRegion);
+  return code ? [code] : [];
 }
 
 export async function searchAwards(
   state: AgentStateType,
 ): Promise<Partial<AgentStateType>> {
   const plan = state.searchPlan;
-  if (!plan) return { awardResults: [] };
+  if (!plan) {
+    return { awardResults: [], searchStatus: "not_run", searchAttempts: 0 };
+  }
 
-  const client = await getClient();
   const collected: AwardOption[] = [];
+  let attempts = 0;
+  let successfulCalls = 0;
 
   if (state.intent === "discovery") {
-    if (plan.origins.length === 0) {
-      return { awardResults: [] };
+    const probes = probesFromPlan(plan);
+    if (plan.origins.length === 0 || probes.length === 0) {
+      return { awardResults: [], searchStatus: "not_run", searchAttempts: 0 };
     }
+    const client = await getClient();
     const originRegion = regionForOrigin(plan.origins[0]);
     // One call per probe — regional availability covers one program each.
-    for (const probe of probesFromPlan(plan)) {
+    for (const probe of probes) {
+      attempts++;
       try {
         const res = await client.regionalAvailability({
           source: probe.program as never,
@@ -120,6 +182,7 @@ export async function searchAwards(
           end_date: plan.endDate,
           take: 1000,
         });
+        successfulCalls++;
         // Regional results cover a whole region; keep only our actual origins.
         const fromOurOrigins = res.data.filter((r) =>
           plan.origins.includes(r.Route.OriginAirport),
@@ -135,28 +198,46 @@ export async function searchAwards(
       }
     }
   } else {
-    if (plan.origins.length === 0 || plan.destinations.length === 0) {
-      return { awardResults: [] };
+    const destinations = destinationsForSearch(
+      plan.destinations,
+      plan.destinationRegion,
+    );
+    if (plan.origins.length === 0 || destinations.length === 0) {
+      return { awardResults: [], searchStatus: "not_run", searchAttempts: 0 };
     }
+
+    const client = await getClient();
+    const programs = supportedPrograms(plan.programs);
+    attempts++;
     try {
       const res = await client.search({
         origin_airport: plan.origins.join(","),
-        destination_airport: plan.destinations.join(","),
+        destination_airport: destinations.join(","),
         start_date: plan.startDate,
         end_date: plan.endDate,
         cabins: plan.cabins.join(","),
-        sources: plan.programs.length > 0 ? plan.programs.join(",") : undefined,
+        // Empty means comprehensive. A non-empty list is an explicit user
+        // constraint, not a planner guess (see PLAN_SEARCH_PROMPT).
+        sources: programs.length > 0 ? programs.join(",") : undefined,
         only_direct_flights: plan.nonstopOnly || undefined,
         take: 500,
         order_by: "lowest_mileage",
       });
+      successfulCalls++;
       collected.push(
         ...filterByCabins(normalizeResults(res.data), plan.cabins),
       );
     } catch {
-      return { awardResults: [] };
+      // LiveSeatsAeroClient already retries network/429 failures internally.
+      // Repeating the identical cached query here cannot improve coverage.
     }
   }
 
-  return { awardResults: rankOptions(collected) };
+  return {
+    awardResults: rankOptions(collected, {
+      preferLowTaxes: prefersLowTaxes(lastUserText(state)),
+    }),
+    searchStatus: successfulCalls > 0 ? "searched" : "provider_error",
+    searchAttempts: attempts,
+  };
 }

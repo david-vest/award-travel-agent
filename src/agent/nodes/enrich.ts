@@ -1,101 +1,60 @@
 // src/agent/nodes/enrich.ts
-import { makeGetTripDetailsTool, type AwardOption, type TripSummary } from "../../tools";
-import { chat } from "../models";
-import { plainSystem } from "../cache";
-import { ENRICH_PROMPT } from "../prompts/enrich";
+import { summarizeTrip, type AwardOption, type TripSummary } from "../../tools";
 import type { AgentStateType } from "../state";
 import { ENRICH_TOP_N, getClient } from "./search";
 
-export type ToolCallLike = { name: string; args: Record<string, unknown> };
+/** Small enough to avoid a rate-limit burst while halving serial wait time. */
+export const DETAIL_LOOKUP_CONCURRENCY = 2;
 
 /**
- * Deduped availabilityIds the model actually asked to look up, restricted to
- * `candidateIds` — the ones actually offered to the model. Guards against a
- * hallucinated or malformed id triggering a wasted lookup.
+ * Deterministically select the already-ranked options worth enriching. One
+ * availability record can contain multiple cabins, so dedupe before applying
+ * the cap; otherwise the same provider record could consume several slots.
  */
-export function idsFromToolCalls(
-  toolCalls: ToolCallLike[],
-  candidateIds: string[],
+export function idsForEnrichment(
+  options: AwardOption[],
+  limit: number = ENRICH_TOP_N,
 ): string[] {
-  const candidates = new Set(candidateIds);
-  const ids = toolCalls
-    .filter((c) => c.name === "get_trip_details")
-    .map((c) => c.args.availabilityId)
-    .filter((id): id is string => typeof id === "string" && id.length > 0)
-    .filter((id) => candidates.has(id));
-  return [...new Set(ids)];
+  return [...new Set(options.map((option) => option.availabilityId))].slice(0, limit);
 }
 
 /**
- * Deliberately excludes flight numbers and aircraft — that is exactly what
- * get_trip_details exists to fetch. Showing it here would remove the reason
- * to call the tool at all.
- */
-export function describeCandidates(options: AwardOption[]): string {
-  return options
-    .map(
-      (o, i) =>
-        `${i + 1}. id=${o.availabilityId} ${o.origin}-${o.destination} ` +
-        `${o.date} program=${o.program} cabin=${o.cabin} miles=${o.miles} ` +
-        `nonstop=${o.direct}`,
-    )
-    .join("\n");
-}
-
-/**
- * The one node in this graph where the model genuinely decides whether to
- * call a tool. Safe here because the candidate list is capped at
- * ENRICH_TOP_N before the model ever sees it — the worst case is a handful of
- * wasted lookups, not an unbounded bill.
+ * Fetch exact flight, aircraft, routing, and tax data for the top-ranked
+ * records without spending an LLM round trip to make an already mechanical
+ * decision. Premium-cabin and low-tax answers depend on this data, so a model
+ * choosing to skip a record hurts accuracy as well as adding latency.
  */
 export async function enrichTrips(
   state: AgentStateType,
 ): Promise<Partial<AgentStateType>> {
-  const top = (state.awardResults ?? []).slice(0, ENRICH_TOP_N);
-  if (top.length === 0) return { tripSummaries: [] };
-
-  const client = await getClient();
-  const tripsTool = makeGetTripDetailsTool(client);
-  const model = chat({ effort: "low" }).bindTools([tripsTool]);
-
-  let response;
-  try {
-    response = await model.invoke([
-      plainSystem(ENRICH_PROMPT),
-      { role: "user", content: describeCandidates(top) },
-    ]);
-  } catch {
-    return { tripSummaries: [] }; // enrichment is additive; its absence must not fail the turn
-  }
-
-  const ids = idsFromToolCalls(
-    response.tool_calls ?? [],
-    top.map((o) => o.availabilityId),
-  );
+  const ids = idsForEnrichment(state.awardResults ?? []);
   if (ids.length === 0) return { tripSummaries: [] };
 
+  const client = await getClient();
   const summaries: TripSummary[] = [];
   const requestedCabins = state.searchPlan?.cabins;
 
-  // Sequential rather than parallel: a burst of up to five is a fast way to
-  // trip the rate limiter, and the latency difference is not user-visible.
-  for (const id of ids) {
-    try {
-      const raw = await tripsTool.invoke({ availabilityId: id });
-      const parsed = JSON.parse(raw) as { trips?: TripSummary[] };
-      const trips = parsed.trips ?? [];
-      // One availabilityId can bundle trips across every cabin seats.aero
-      // knows about; without this filter a business/first request gets
-      // flooded with economy alternates that bury the cabins actually asked
-      // for and burn context on options the user can't use.
-      const relevant =
-        requestedCabins && requestedCabins.length > 0
-          ? trips.filter((t) => !t.cabin || requestedCabins.includes(t.cabin))
-          : trips;
-      summaries.push(...relevant);
-    } catch {
-      continue; // enrichment is additive; its absence must not fail the turn
-    }
+  for (let start = 0; start < ids.length; start += DETAIL_LOOKUP_CONCURRENCY) {
+    const batch = ids.slice(start, start + DETAIL_LOOKUP_CONCURRENCY);
+    const results = await Promise.all(
+      batch.map(async (id): Promise<TripSummary[]> => {
+        try {
+          const response = await client.trips(id);
+          const trips = (response.data ?? []).map((trip) => summarizeTrip(trip, id));
+          // One availabilityId can bundle trips across every cabin seats.aero
+          // knows about; without this filter a business/first request gets
+          // flooded with economy alternates that bury the cabins requested.
+          return requestedCabins && requestedCabins.length > 0
+            ? trips.filter(
+                (trip) => !trip.cabin || requestedCabins.includes(trip.cabin),
+              )
+            : trips;
+        } catch {
+          return []; // enrichment is additive; one failed detail call is harmless
+        }
+      }),
+    );
+    summaries.push(...results.flat());
   }
 
   return { tripSummaries: summaries };

@@ -1,5 +1,15 @@
-import { describe, it, expect } from "vitest";
-import { buildPreFilter, buildRetrievalQuery } from "./retriever";
+import { beforeEach, describe, it, expect, vi } from "vitest";
+
+const similaritySearch = vi.fn();
+vi.mock("./store", () => ({
+  getVectorStore: vi.fn(async () => ({ similaritySearch })),
+}));
+
+import {
+  buildPreFilter,
+  buildRetrievalQuery,
+  retrieveKnowledge,
+} from "./retriever";
 import type { AwardOption, TripSummary } from "../tools";
 
 const option = (over: Partial<AwardOption> = {}): AwardOption => ({
@@ -82,5 +92,32 @@ describe("buildPreFilter and trips", () => {
     // this test exists to catch a future accidental regression toward filtering.
     const f = buildPreFilter([option()]);
     expect(f).not.toHaveProperty("aircraft");
+  });
+});
+
+describe("retrieveKnowledge", () => {
+  beforeEach(() => {
+    similaritySearch.mockReset();
+  });
+
+  it("does not fall back to unrelated unfiltered docs for a flight-backed answer", async () => {
+    similaritySearch.mockResolvedValueOnce([]);
+
+    expect(await retrieveKnowledge("low taxes?", [option()])).toEqual([]);
+
+    expect(similaritySearch).toHaveBeenCalledTimes(1);
+    expect(similaritySearch.mock.calls[0]?.[2]).toBeDefined();
+  });
+
+  it("still searches the whole KB for a pure knowledge question", async () => {
+    similaritySearch.mockResolvedValueOnce([]);
+
+    await retrieveKnowledge("Can Chase transfer to Alaska?", []);
+
+    expect(similaritySearch).toHaveBeenCalledWith(
+      "Can Chase transfer to Alaska?",
+      expect.any(Number),
+      undefined,
+    );
   });
 });

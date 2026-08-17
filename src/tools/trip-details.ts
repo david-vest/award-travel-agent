@@ -2,6 +2,7 @@ import { z } from "zod";
 import { tool } from "@langchain/core/tools";
 import type { SeatsAeroClient } from "./seats-aero";
 import type { Trip } from "./seats-aero/types";
+import { normalizeTaxes } from "./seats-aero/money";
 
 export type TripSummary = {
   availabilityId: string;
@@ -12,6 +13,8 @@ export type TripSummary = {
   stops: number;
   cabin?: string;
   miles?: number;
+  taxes?: number;
+  taxesCurrency?: string;
   departsAt?: string;
   arrivesAt?: string;
 };
@@ -38,6 +41,8 @@ export function summarizeTrip(trip: Trip, availabilityId: string): TripSummary {
     stops: trip.Stops ?? Math.max(0, segments.length - 1),
     cabin: trip.Cabin,
     miles: trip.MileageCost,
+    taxes: normalizeTaxes(trip.TotalTaxes, trip.TaxesCurrency),
+    taxesCurrency: trip.TaxesCurrency,
     departsAt: trip.DepartsAt ?? segments[0]?.DepartsAt,
     arrivesAt: trip.ArrivesAt ?? segments[segments.length - 1]?.ArrivesAt,
   };

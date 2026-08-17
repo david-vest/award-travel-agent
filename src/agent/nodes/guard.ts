@@ -41,6 +41,8 @@ export const guardSchema = z.object({
  */
 const RESET_TURN_STATE: Partial<AgentStateType> = {
   awardResults: [],
+  searchStatus: "not_run",
+  searchAttempts: 0,
   tripSummaries: [],
   kbDocs: [],
   draft: null,
@@ -73,10 +75,12 @@ export async function guardInput(
   // Nothing to screen. Let triage deal with the empty case.
   if (text.trim().length === 0) return { ...resetTurnState, intent: null };
 
-  const model = chat({ effort: "low", disableThinking: true }).withStructuredOutput(
-    guardSchema,
-    { name: "guard_decision" },
-  );
+  const model = chat({
+    model: "haiku",
+    effort: "low",
+    maxTokens: 256,
+    disableThinking: true,
+  }).withStructuredOutput(guardSchema, { name: "guard_decision" });
 
   // thinking:"adaptive" + withStructuredOutput's forced tool calling don't
   // always compose cleanly (see models.ts). A guard failure should not block

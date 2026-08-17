@@ -98,6 +98,12 @@ export type AvailabilityResult = {
   JAirlines?: string;
   FAirlines?: string;
 
+  TaxesCurrency?: string;
+  YTotalTaxes?: number;
+  WTotalTaxes?: number;
+  JTotalTaxes?: number;
+  FTotalTaxes?: number;
+
   UpdatedAt?: string;
   CreatedAt?: string;
 };

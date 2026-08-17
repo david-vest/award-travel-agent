@@ -91,13 +91,12 @@ export async function retrieveKnowledge(
   const query = buildRetrievalQuery(userQuestion, options, trips);
   const preFilter = buildPreFilter(options);
 
-  let docs = await store.similaritySearch(query, k, preFilter);
+  const docs = await store.similaritySearch(query, k, preFilter);
 
-  // A narrow filter can legitimately match nothing — an unusual carrier with no
-  // KB coverage. Fall back to unfiltered rather than returning no knowledge.
-  if (docs.length === 0 && preFilter) {
-    docs = await store.similaritySearch(query, k);
-  }
+  // For a flight-backed answer, an empty carrier/program-filtered result is
+  // the correct result. Falling back to the whole KB injects unrelated airline
+  // trivia that cannot help compare the flights actually found. Pure knowledge
+  // questions still have no preFilter and continue to search the whole KB.
 
   return docs.map((d) => ({
     id: String(d.metadata.id ?? "unknown"),

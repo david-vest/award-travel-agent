@@ -1,8 +1,16 @@
 // src/agent/nodes/refresh.ts
 import type { AwardOption } from "../../tools";
-import type { AgentStateType } from "../state";
-import { getClient, filterByCabins, rankOptions } from "./search";
+import type { AgentStateType, SearchPlan } from "../state";
+import {
+  destinationsForSearch,
+  getClient,
+  filterByCabins,
+  prefersLowTaxes,
+  rankOptions,
+} from "./search";
+import { lastUserText } from "./triage";
 import { normalizeResults } from "../../tools";
+import { resolveSeatsAeroSearchCode } from "../../tools/seats-aero/multi-city-codes";
 
 /** Each newly-queued id costs one daily credit — keep this small. */
 export const REFRESH_TOP_N = 5;
@@ -40,6 +48,26 @@ function isStale(option: AwardOption, now: Date): boolean {
 }
 
 /**
+ * Refresh is a booking-intent operation, not an exploration operation. A
+ * multi-airport city, a provider-native region code, or either side spanning
+ * multiple values can fan out across many routes even when only a few cached
+ * results happen to come back. Refresh those after the user narrows to one
+ * airport pair, not during the broad first pass.
+ */
+export function isBroadSearchPlan(plan: SearchPlan | null | undefined): boolean {
+  if (!plan) return true;
+  const destinations = destinationsForSearch(
+    plan.destinations,
+    plan.destinationRegion,
+  );
+  if (plan.origins.length !== 1 || destinations.length !== 1) return true;
+  return Boolean(
+    resolveSeatsAeroSearchCode(plan.origins[0]) ||
+      resolveSeatsAeroSearchCode(destinations[0]),
+  );
+}
+
+/**
  * The gate. Three conditions, all required:
  *  - precise query only. A discovery fan-out could queue hundreds of ids.
  *  - small result set. A broad search is exploratory, not booking-intent.
@@ -50,6 +78,7 @@ export function shouldRefresh(
   now: Date = new Date(),
 ): boolean {
   if (state.intent !== "route_search") return false;
+  if (isBroadSearchPlan(state.searchPlan)) return false;
   const options = state.awardResults ?? [];
   if (options.length === 0) return false;
   if (options.length > MAX_RESULTS_FOR_REFRESH) return false;
@@ -159,9 +188,13 @@ async function refetch(
     // searchAwards just ran, so a cached client would hand back the same
     // (already-stale) payload instead of genuinely re-hitting the live API.
     const client = await getClient({ skipCache: true });
+    const destinations = destinationsForSearch(
+      plan.destinations,
+      plan.destinationRegion,
+    );
     const res = await client.search({
       origin_airport: plan.origins.join(","),
-      destination_airport: plan.destinations.join(","),
+      destination_airport: destinations.join(","),
       start_date: plan.startDate,
       end_date: plan.endDate,
       cabins: plan.cabins.join(","),
@@ -190,7 +223,9 @@ async function refetch(
       (o) => refreshed.has(o.availabilityId) && !updatedIds.has(o.availabilityId),
     );
     // Downstream (enrich_trips, degrade, synthesize) all assume rank order.
-    return rankOptions([...replacements, ...missing, ...untouched]);
+    return rankOptions([...replacements, ...missing, ...untouched], {
+      preferLowTaxes: prefersLowTaxes(lastUserText(state)),
+    });
   } catch {
     return previous;
   }

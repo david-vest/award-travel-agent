@@ -57,10 +57,11 @@ export async function planDiscovery(state: AgentStateType): Promise<AgentStateUp
     .slice(0, 10);
   const priorContext = await conversationContext(state);
 
-  const model = chat({ effort: "low", disableThinking: true }).withStructuredOutput(
-    discoveryPlanSchema,
-    { name: "discovery_plan" },
-  );
+  const model = chat({
+    effort: "low",
+    maxTokens: 1_200,
+    disableThinking: true,
+  }).withStructuredOutput(discoveryPlanSchema, { name: "discovery_plan" });
 
   const raw = await model.invoke([
     plainSystem(DISCOVERY_PROMPT),

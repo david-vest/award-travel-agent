@@ -14,7 +14,12 @@ vi.mock("../../tools/locations/resolve", () => ({
 
 import { chat } from "../models";
 import { resolveLocation } from "../../tools/locations/resolve";
-import { buildPlannerContext, searchPlanSchema, planSearch } from "./plan-search";
+import {
+  buildPlannerContext,
+  inferMultiCityRoute,
+  searchPlanSchema,
+  planSearch,
+} from "./plan-search";
 
 /** Wires `chat(...).withStructuredOutput(...).invoke(...)` to resolve with `result`. */
 function mockPlannerResponse(result: unknown) {
@@ -74,6 +79,27 @@ describe("buildPlannerContext", () => {
   });
 });
 
+describe("inferMultiCityRoute", () => {
+  it("recovers USA to EUR when structured planning omits the route", () => {
+    expect(
+      inferMultiCityRoute(
+        "Flights from USA to Europe in business between September 16th-18th",
+      ),
+    ).toEqual({ origins: ["USA"], destinations: ["EUR"] });
+  });
+
+  it("retains multiple published origins and destinations", () => {
+    expect(
+      inferMultiCityRoute(
+        "from California or New York to London, Paris, or Schengen Area",
+      ),
+    ).toEqual({
+      origins: ["CAL", "NYC"],
+      destinations: ["LON", "PAR", "SCH"],
+    });
+  });
+});
+
 describe("PLAN_SEARCH_PROMPT", () => {
   it("is long enough to actually cache", () => {
     expect(estimateTokens(PLAN_SEARCH_PROMPT)).toBeGreaterThanOrEqual(
@@ -85,6 +111,12 @@ describe("PLAN_SEARCH_PROMPT", () => {
     // A date in the cached system prompt would invalidate the prefix daily.
     expect(PLAN_SEARCH_PROMPT).not.toMatch(/20\d\d-\d\d-\d\d/);
     expect(PLAN_SEARCH_PROMPT).not.toMatch(/\b20[2-9]\d\b/);
+  });
+
+  it("treats programs as user constraints and searches all when none were named", () => {
+    expect(PLAN_SEARCH_PROMPT).toContain("programs: []");
+    expect(PLAN_SEARCH_PROMPT).toMatch(/query all\s+seats\.aero programs/i);
+    expect(PLAN_SEARCH_PROMPT).not.toMatch(/pick three to five programs/i);
   });
 });
 
@@ -133,6 +165,60 @@ describe("planSearch place resolution", () => {
 
     expect(planOf(result)?.unresolvedPlaces).toContain("Nowhereville");
     expect(planOf(result)?.origins).toEqual(["ORD", "MDW"]);
+  });
+
+  it("retries an empty planner result and deterministically preserves multi-city endpoints", async () => {
+    const invoke = vi
+      .fn()
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({
+        cabins: ["business", "first"],
+        startDate: "2026-09-16",
+        endDate: "2026-09-18",
+        programs: [],
+      });
+    const withStructuredOutput = vi.fn().mockReturnValue({ invoke });
+    vi.mocked(chat).mockReturnValue({ withStructuredOutput } as never);
+    vi.mocked(resolveLocation).mockImplementation((query: string) => ({
+      kind: "airports",
+      iatas: [query],
+      label: query,
+    }));
+
+    const result = await planSearch(
+      stateWith(
+        "Flights from USA to Europe in Business or first with low taxes between September 16th-18th 2026",
+      ),
+    );
+
+    expect(invoke).toHaveBeenCalledTimes(2);
+    expect(planOf(result)).toMatchObject({
+      origins: ["USA"],
+      destinations: ["EUR"],
+      cabins: ["business", "first"],
+      startDate: "2026-09-16",
+      endDate: "2026-09-18",
+      programs: [],
+    });
+  });
+
+  it("still searches inferred multi-city endpoints when both planner attempts are empty", async () => {
+    const invoke = vi.fn().mockResolvedValue({});
+    const withStructuredOutput = vi.fn().mockReturnValue({ invoke });
+    vi.mocked(chat).mockReturnValue({ withStructuredOutput } as never);
+    vi.mocked(resolveLocation).mockImplementation((query: string) => ({
+      kind: "airports",
+      iatas: [query],
+      label: query,
+    }));
+
+    const result = await planSearch(stateWith("USA to Europe"));
+
+    expect(invoke).toHaveBeenCalledTimes(2);
+    expect(planOf(result)).toMatchObject({
+      origins: ["USA"],
+      destinations: ["EUR"],
+    });
   });
 
   it("carries an ambiguous match's candidates onto the plan instead of dropping it", async () => {
@@ -213,7 +299,7 @@ describe("planSearch place resolution", () => {
     expect(planOf(result)).not.toHaveProperty("destinations");
   });
 
-  it("sends an explicit empty destinations list when the model names a region, distinct from omitting it", async () => {
+  it("turns a Europe region request into seats.aero's EUR multi-city search code", async () => {
     mockPlannerResponse({
       origins: ["Chicago"],
       destinations: [],
@@ -226,7 +312,25 @@ describe("planSearch place resolution", () => {
     } as never);
 
     const result = await planSearch(stateWith("anywhere in Europe from Chicago"));
-    expect(planOf(result)?.destinations).toEqual([]);
+    expect(planOf(result)?.destinations).toEqual(["EUR"]);
     expect(planOf(result)?.destinationRegion).toBe("Europe");
+  });
+
+  it("drops mileage-program identifiers that seats.aero does not support", async () => {
+    mockPlannerResponse({
+      origins: ["USA"],
+      destinations: [],
+      destinationRegion: "Europe",
+      programs: ["aeroplan", "avianca", "lifemiles"],
+    });
+    vi.mocked(resolveLocation).mockReturnValue({
+      kind: "airports",
+      iatas: ["USA"],
+      label: "United States — major airports",
+    } as never);
+
+    const result = await planSearch(stateWith("USA to Europe"));
+
+    expect(planOf(result)?.programs).toEqual(["aeroplan", "lifemiles"]);
   });
 });

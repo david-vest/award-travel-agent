@@ -31,6 +31,8 @@ function stateWith(text: string): AgentStateType {
 /** The channels every new turn must start clean on. */
 const SEARCH_RESET_FIELDS = {
   awardResults: [],
+  searchStatus: "not_run",
+  searchAttempts: 0,
   tripSummaries: [],
   kbDocs: [],
   draft: null,
@@ -59,6 +61,12 @@ describe("guardInput", () => {
     expect(result).toMatchObject(RESET_FIELDS);
     expect(result.intent).toBeNull();
     expect(result.refusalReason).toBeNull();
+    expect(chat).toHaveBeenCalledWith({
+      model: "haiku",
+      effort: "low",
+      maxTokens: 256,
+      disableThinking: true,
+    });
   });
 
   it("resets all search-derived state when the model rejects the message", async () => {

@@ -2,11 +2,29 @@ import { describe, it, expect } from "vitest";
 import { resolveLocation } from "./resolve";
 
 describe("resolveLocation", () => {
-  it("expands a city to all its airports", () => {
+  it("recognizes seats.aero's USA and EUR multi-city codes", () => {
+    expect(resolveLocation("USA")).toMatchObject({
+      kind: "airports",
+      iatas: ["USA"],
+    });
+    expect(resolveLocation("EUR")).toMatchObject({
+      kind: "airports",
+      iatas: ["EUR"],
+    });
+  });
+
+  it("maps United States wording to seats.aero's USA multi-city code", () => {
+    expect(resolveLocation("United States")).toMatchObject({
+      kind: "airports",
+      iatas: ["USA"],
+    });
+  });
+
+  it("uses a published metropolitan code when seats.aero has one", () => {
     const r = resolveLocation("Chicago");
     expect(r.kind).toBe("airports");
     if (r.kind !== "airports") return;
-    expect(r.iatas).toEqual(expect.arrayContaining(["ORD", "MDW"]));
+    expect(r.iatas).toEqual(["CHI"]);
   });
 
   it("is case and whitespace insensitive", () => {
@@ -29,21 +47,14 @@ describe("resolveLocation", () => {
     expect(prague.iatas).toContain("PRG");
   });
 
-  it("resolves a continent to a region plus representative MAJOR_HUBS airports", () => {
+  it("uses a published large-airport code instead of a hand-picked region sample", () => {
     const r = resolveLocation("Asia");
-    expect(r.kind).toBe("region");
-    if (r.kind !== "region") return;
-    expect(r.region).toBe("Asia");
-    expect(r.representativeIatas.length).toBeGreaterThan(3);
-    // must be real hubs, not whatever the full ~6,000-row table happens to sort first
-    expect(r.representativeIatas).toEqual(
-      expect.arrayContaining([expect.stringMatching(/^(NRT|HND|SIN|ICN|HKG)$/)]),
-    );
+    expect(r).toMatchObject({ kind: "airports", iatas: ["ASA"] });
   });
 
-  it("resolves a known region synonym", () => {
+  it("resolves Europe to seats.aero's published EUR grouping", () => {
     const r = resolveLocation("Europe");
-    expect(r).toMatchObject({ kind: "region", region: "Europe" });
+    expect(r).toMatchObject({ kind: "airports", iatas: ["EUR"] });
   });
 
   it("resolves an unambiguous partial city match", () => {
@@ -78,25 +89,23 @@ describe("resolveLocation", () => {
     expect(r.kind).toBe("unknown");
   });
 
-  it("returns ambiguous, not a merged guess, when an exact city name spans multiple countries", () => {
+  it("uses the published London metropolitan grouping rather than an ambiguous city match", () => {
     const r = resolveLocation("London");
-    expect(r.kind).toBe("ambiguous");
-    if (r.kind !== "ambiguous") return;
-    expect(r.candidates).toEqual(
-      expect.arrayContaining([expect.stringContaining("United Kingdom")]),
-    );
-    expect(r.candidates).toEqual(
-      expect.arrayContaining([
-        expect.stringMatching(/United States|Canada/),
-      ]),
-    );
+    expect(r).toMatchObject({ kind: "airports", iatas: ["LON"] });
   });
 
-  it("still resolves an exact city match normally when it's confined to one country", () => {
+  it("uses the published Chicago grouping for an exact city name", () => {
     const r = resolveLocation("Chicago");
     expect(r.kind).toBe("airports");
     if (r.kind !== "airports") return;
-    expect(r.iatas).toEqual(expect.arrayContaining(["ORD", "MDW"]));
+    expect(r.iatas).toEqual(["CHI"]);
+  });
+
+  it("keeps a broad area without a published grouping as a region", () => {
+    expect(resolveLocation("Africa")).toMatchObject({
+      kind: "region",
+      region: "Africa",
+    });
   });
 
   it("returns unknown for an empty or whitespace-only query without doing any lookup", () => {

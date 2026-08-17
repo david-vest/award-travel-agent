@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { HumanMessage } from "@langchain/core/messages";
-import { buildSynthesisContext } from "./synthesize";
+import { buildNoFlightsDraft, buildSynthesisContext } from "./synthesize";
 import { SYNTHESIZE_PROMPT } from "../prompts/synthesize";
 import { estimateTokens, CACHE_MIN_TOKENS } from "../cache";
 import type { AgentStateType } from "../state";
@@ -29,6 +29,8 @@ const state = (over: Partial<AgentStateType> = {}): AgentStateType =>
         program: "aeroplan",
         cabin: "business",
         miles: 87500,
+        taxes: 112.9,
+        taxesCurrency: "USD",
         direct: true,
         airlines: "NH",
         updatedAt: "2026-08-11T09:00:00Z",
@@ -42,7 +44,21 @@ const state = (over: Partial<AgentStateType> = {}): AgentStateType =>
 
 describe("buildSynthesisContext", () => {
   it("includes the award options", () => {
-    expect(buildSynthesisContext(state())).toContain("87500");
+    const ctx = buildSynthesisContext(state());
+    expect(ctx).toContain("87500");
+    expect(ctx).toContain("taxes=112.9");
+    expect(ctx).toContain("taxesCurrency=USD");
+  });
+
+  it("supplies only the five highest-ranked options and labels the full count", () => {
+    const options = Array.from({ length: 7 }, (_, i) => ({
+      ...state().awardResults[0],
+      availabilityId: `a${i + 1}`,
+    }));
+    const ctx = buildSynthesisContext(state({ awardResults: options }));
+    expect(ctx).toContain("5 of 7 returned");
+    expect(ctx).toContain("id=a5");
+    expect(ctx).not.toContain("id=a6");
   });
 
   it("includes the user question", () => {
@@ -62,6 +78,26 @@ describe("buildSynthesisContext", () => {
       ],
     });
     expect(buildSynthesisContext(s)).toContain("ana-777");
+  });
+
+  it("suppresses knowledge excerpts when a flight search found no options", () => {
+    const ctx = buildSynthesisContext(
+      state({
+        awardResults: [],
+        kbDocs: [
+          {
+            id: "generic-trivia",
+            collection: "seasonality",
+            text: "A long generic knowledge dump.",
+            sources: [],
+            updated: "2026-06-01",
+          },
+        ],
+      }),
+    );
+
+    expect(ctx).not.toContain("generic-trivia");
+    expect(ctx).not.toContain("generic knowledge dump");
   });
 
   it("says plainly when no options were found rather than leaving a blank", () => {
@@ -140,6 +176,8 @@ describe("buildSynthesisContext", () => {
           stops: 1,
           cabin: "business",
           miles: 87500,
+          taxes: 73.4,
+          taxesCurrency: "USD",
         },
       ],
     });
@@ -147,6 +185,8 @@ describe("buildSynthesisContext", () => {
     expect(ctx).toContain("for=a1");
     expect(ctx).toContain("cabin=business");
     expect(ctx).toContain("miles=87500");
+    expect(ctx).toContain("taxes=73.4");
+    expect(ctx).toContain("taxesCurrency=USD");
   });
 
   it("surfaces an unresolved place name rather than silently searching without it", () => {
@@ -194,6 +234,45 @@ describe("buildSynthesisContext", () => {
     const ctx = buildSynthesisContext(s);
     expect(ctx).toContain("San Francisco");
     expect(ctx).toContain("San Diego");
+  });
+});
+
+describe("buildNoFlightsDraft", () => {
+  it("briefly asks for changes after an exhausted USA to EUR search", () => {
+    const draft = buildNoFlightsDraft(
+      state({
+        awardResults: [],
+        searchStatus: "searched",
+        searchAttempts: 2,
+        searchPlan: {
+          origins: ["USA"],
+          destinations: ["EUR"],
+          destinationRegion: "Europe",
+          startDate: "2026-09-16",
+          endDate: "2026-09-18",
+          cabins: ["business", "first"],
+          nonstopOnly: false,
+          programs: ["aeroplan"],
+        },
+      }),
+    );
+
+    expect(draft).toContain("United States — large airports");
+    expect(draft).toContain("Europe — large airports");
+    expect(draft).toMatch(/widen the dates/i);
+    expect(draft.split("\n")).toHaveLength(1);
+    expect(draft.length).toBeLessThan(500);
+  });
+
+  it("does not call an outage 'no availability'", () => {
+    const draft = buildNoFlightsDraft(
+      state({
+        awardResults: [],
+        searchStatus: "provider_error",
+      }),
+    );
+    expect(draft).toMatch(/did not return a usable response/i);
+    expect(draft).toMatch(/retry/i);
   });
 });
 

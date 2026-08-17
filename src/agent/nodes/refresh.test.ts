@@ -25,7 +25,13 @@ vi.mock("./search", async (importOriginal) => {
   };
 });
 
-import { shouldRefresh, staleOptionIds, refreshAvailability, REFRESH_TOP_N } from "./refresh";
+import {
+  isBroadSearchPlan,
+  shouldRefresh,
+  staleOptionIds,
+  refreshAvailability,
+  REFRESH_TOP_N,
+} from "./refresh";
 
 const NOW = new Date("2026-08-11T12:00:00Z");
 const hoursAgo = (h: number) =>
@@ -46,7 +52,43 @@ const opt = (over: Partial<AwardOption> = {}): AwardOption => ({
 });
 
 const state = (over: Partial<AgentStateType> = {}): AgentStateType =>
-  ({ intent: "route_search", awardResults: [opt()], ...over }) as AgentStateType;
+  ({
+    intent: "route_search",
+    searchPlan: {
+      origins: ["ORD"],
+      destinations: ["NRT"],
+      cabins: ["business"],
+      nonstopOnly: false,
+      programs: [],
+    },
+    awardResults: [opt()],
+    ...over,
+  }) as AgentStateType;
+
+describe("isBroadSearchPlan", () => {
+  it("treats one concrete airport pair as precise", () => {
+    expect(isBroadSearchPlan(state().searchPlan)).toBe(false);
+  });
+
+  it("treats seats.aero multi-city codes as broad", () => {
+    expect(
+      isBroadSearchPlan({
+        ...state().searchPlan!,
+        origins: ["USA"],
+        destinations: ["EUR"],
+      }),
+    ).toBe(true);
+  });
+
+  it("treats a multi-airport city pair as broad", () => {
+    expect(
+      isBroadSearchPlan({
+        ...state().searchPlan!,
+        origins: ["ORD", "MDW"],
+      }),
+    ).toBe(true);
+  });
+});
 
 describe("shouldRefresh", () => {
   it("refreshes a small, stale, precise result set", () => {
@@ -55,6 +97,20 @@ describe("shouldRefresh", () => {
 
   it("never refreshes on the discovery branch, whatever the data looks like", () => {
     expect(shouldRefresh(state({ intent: "discovery" }), NOW)).toBe(false);
+  });
+
+  it("does not spend refresh time or quota on a broad USA to EUR search", () => {
+    const broad = state({
+      searchPlan: {
+        origins: ["USA"],
+        destinations: ["EUR"],
+        destinationRegion: "Europe",
+        cabins: ["business", "first"],
+        nonstopOnly: false,
+        programs: [],
+      },
+    });
+    expect(shouldRefresh(broad, NOW)).toBe(false);
   });
 
   it("does not refresh when results are already fresh", () => {

@@ -42,9 +42,11 @@ vi.mock("../../rag/store", () => ({
 
 import {
   searchAwards,
+  destinationsForSearch,
   filterByCabins,
   regionForOrigin,
   rankOptions,
+  prefersLowTaxes,
   ENRICH_TOP_N,
 } from "./search";
 
@@ -122,8 +124,81 @@ describe("rankOptions", () => {
     expect(rankOptions([])).toEqual([]);
   });
 
+  it("puts lower same-currency taxes first when the user prioritizes fees", () => {
+    const r = rankOptions(
+      [
+        opt({
+          availabilityId: "cheap-miles",
+          miles: 60_000,
+          taxes: 1454,
+          taxesCurrency: "USD",
+        }),
+        opt({
+          availabilityId: "low-fees",
+          miles: 62_500,
+          taxes: 112.9,
+          taxesCurrency: "USD",
+        }),
+      ],
+      { preferLowTaxes: true },
+    );
+    expect(r[0].availabilityId).toBe("low-fees");
+  });
+
+  it("puts reported taxes before options whose taxes are unknown", () => {
+    const r = rankOptions(
+      [
+        opt({ availabilityId: "unknown", miles: 50_000 }),
+        opt({
+          availabilityId: "known",
+          miles: 70_000,
+          taxes: 150,
+          taxesCurrency: "USD",
+        }),
+      ],
+      { preferLowTaxes: true },
+    );
+    expect(r[0].availabilityId).toBe("known");
+  });
+
+  it("does not compare tax amounts across unlike currencies", () => {
+    const r = rankOptions(
+      [
+        opt({
+          availabilityId: "cad",
+          miles: 80_000,
+          taxes: 100,
+          taxesCurrency: "CAD",
+        }),
+        opt({
+          availabilityId: "usd",
+          miles: 60_000,
+          taxes: 90,
+          taxesCurrency: "USD",
+        }),
+      ],
+      { preferLowTaxes: true },
+    );
+    expect(r[0].availabilityId).toBe("usd");
+  });
+
   it("enriches exactly five options", () => {
     expect(ENRICH_TOP_N).toBe(5);
+  });
+});
+
+describe("prefersLowTaxes", () => {
+  it.each([
+    "business class with low taxes",
+    "minimize fees",
+    "avoid carrier surcharges",
+    "taxes are lowest",
+  ])("recognizes %s", (text) => {
+    expect(prefersLowTaxes(text)).toBe(true);
+  });
+
+  it("does not treat an ordinary query as tax-prioritized", () => {
+    expect(prefersLowTaxes("business flights from USA to Europe")).toBe(false);
   });
 });
 
@@ -145,9 +220,31 @@ describe("regionForOrigin", () => {
     expect(regionForOrigin("NRT")).toBe("Asia");
   });
 
+  it("derives the region for seats.aero multi-city codes", () => {
+    expect(regionForOrigin("USA")).toBe("North America");
+    expect(regionForOrigin("EUR")).toBe("Europe");
+  });
+
   it("falls back to North America when the origin can't be resolved", () => {
     expect(regionForOrigin("ZZZ")).toBe("North America");
     expect(regionForOrigin(undefined)).toBe("North America");
+  });
+});
+
+describe("destinationsForSearch", () => {
+  it("uses seats.aero's EUR code for a broad Europe route", () => {
+    expect(destinationsForSearch([], "Europe")).toEqual(["EUR"]);
+  });
+
+  it("does not narrow North America to the USA country grouping", () => {
+    expect(destinationsForSearch([], "North America")).toEqual([]);
+  });
+
+  it("keeps concrete destinations ahead of a broad region", () => {
+    expect(destinationsForSearch(["CDG", "LHR"], "Europe")).toEqual([
+      "CDG",
+      "LHR",
+    ]);
   });
 });
 
@@ -190,6 +287,105 @@ describe("searchAwards", () => {
     const result = await searchAwards(state);
 
     expect(result.awardResults).toHaveLength(2);
+  });
+
+  it("searches USA to EUR across every program in one call when no program was requested", async () => {
+    searchMock.mockResolvedValueOnce(searchResponse([multiCabinRecord()]));
+
+    const plan: SearchPlan = {
+      origins: ["USA"],
+      destinations: [],
+      destinationRegion: "Europe",
+      cabins: ["business"],
+      nonstopOnly: false,
+      programs: [],
+    };
+    const result = await searchAwards({
+      searchPlan: plan,
+      intent: "route_search",
+    } as AgentStateType);
+
+    expect(searchMock).toHaveBeenCalledTimes(1);
+    expect(searchMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        origin_airport: "USA",
+        destination_airport: "EUR",
+        sources: undefined,
+      }),
+    );
+    expect(result.awardResults).toHaveLength(1);
+    expect(result.searchStatus).toBe("searched");
+    expect(result.searchAttempts).toBe(1);
+  });
+
+  it("sends several origins and destinations in one comma-delimited API call", async () => {
+    searchMock.mockResolvedValueOnce(searchResponse([]));
+
+    await searchAwards({
+      searchPlan: {
+        ...basePlan,
+        origins: ["CAL", "NYC"],
+        destinations: ["LON", "PAR", "SCH"],
+      },
+      intent: "route_search",
+    } as AgentStateType);
+
+    expect(searchMock).toHaveBeenCalledTimes(1);
+    expect(searchMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        origin_airport: "CAL,NYC",
+        destination_airport: "LON,PAR,SCH",
+      }),
+    );
+  });
+
+  it("honors an explicit mileage-program constraint without broadening it", async () => {
+    searchMock.mockResolvedValueOnce(searchResponse([]));
+
+    const result = await searchAwards({
+      searchPlan: {
+        ...basePlan,
+        programs: ["aeroplan", "lifemiles"],
+      },
+      intent: "route_search",
+    } as AgentStateType);
+
+    expect(searchMock).toHaveBeenCalledTimes(1);
+    expect(searchMock).toHaveBeenCalledWith(
+      expect.objectContaining({ sources: "aeroplan,lifemiles" }),
+    );
+    expect(result.awardResults).toEqual([]);
+    expect(result.searchStatus).toBe("searched");
+  });
+
+  it("does not send unsupported program identifiers to seats.aero", async () => {
+    searchMock.mockResolvedValueOnce(searchResponse([]));
+
+    await searchAwards({
+      searchPlan: {
+        ...basePlan,
+        programs: ["avianca"],
+      },
+      intent: "route_search",
+    } as AgentStateType);
+
+    expect(searchMock).toHaveBeenCalledTimes(1);
+    expect(searchMock).toHaveBeenCalledWith(
+      expect.objectContaining({ sources: undefined }),
+    );
+  });
+
+  it("distinguishes provider failure from a successful empty search", async () => {
+    searchMock.mockRejectedValue(new Error("provider unavailable"));
+
+    const result = await searchAwards({
+      searchPlan: { ...basePlan, programs: ["aeroplan"] },
+      intent: "route_search",
+    } as AgentStateType);
+
+    expect(result.awardResults).toEqual([]);
+    expect(result.searchStatus).toBe("provider_error");
+    expect(result.searchAttempts).toBe(1);
   });
 
   it("[BUG-CABIN-FILTER] filters discovery-branch results by each probe's own cabin, not the plan's flattened union", async () => {
@@ -247,6 +443,7 @@ describe("searchAwards", () => {
     const result = await searchAwards(state);
 
     expect(result.awardResults).toEqual([]);
+    expect(result.searchStatus).toBe("not_run");
     expect(regionalAvailabilityMock).not.toHaveBeenCalled();
   });
 });

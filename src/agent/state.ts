@@ -4,6 +4,7 @@ import type { AwardOption, TripSummary } from "../tools";
 import type { RetrievedDoc } from "../rag/retriever";
 
 export type Intent = "route_search" | "discovery" | "knowledge" | "rejected";
+export type SearchStatus = "not_run" | "searched" | "provider_error";
 
 /**
  * One program+region+cabin combination the discovery planner decided is worth
@@ -117,6 +118,8 @@ export const AgentState = Annotation.Root({
     default: () => null,
   }),
   awardResults: Annotation<AwardOption[]>(replace<AwardOption[]>(() => [])),
+  searchStatus: Annotation<SearchStatus>(replace<SearchStatus>(() => "not_run")),
+  searchAttempts: Annotation<number>(replace<number>(() => 0)),
   tripSummaries: Annotation<TripSummary[]>(replace<TripSummary[]>(() => [])),
   kbDocs: Annotation<RetrievedDoc[]>(replace<RetrievedDoc[]>(() => [])),
 

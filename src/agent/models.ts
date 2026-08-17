@@ -1,6 +1,13 @@
 import { ChatAnthropic } from "@langchain/anthropic";
 
-export const MODEL_ID = "claude-sonnet-5";
+export const MODEL_IDS = {
+  sonnet: "claude-sonnet-5",
+  haiku: "claude-haiku-4-5-20251001",
+} as const;
+
+/** Backward-compatible name for the default model used by reasoning nodes. */
+export const MODEL_ID = MODEL_IDS.sonnet;
+export type ModelTier = keyof typeof MODEL_IDS;
 
 export type Effort = "low" | "medium" | "high";
 
@@ -22,6 +29,7 @@ const MAX_TOKENS: Record<Effort, number> = {
  */
 export function chat(opts: {
   effort: Effort;
+  model?: ModelTier;
   maxTokens?: number;
   /** Set "summarized" only where reasoning is streamed to a user. */
   thinkingDisplay?: "omitted" | "summarized";
@@ -35,14 +43,17 @@ export function chat(opts: {
    */
   disableThinking?: boolean;
 }): ChatAnthropic {
+  const modelTier = opts.model ?? "sonnet";
   return new ChatAnthropic({
-    model: MODEL_ID,
+    model: MODEL_IDS[modelTier],
     maxTokens: opts.maxTokens ?? MAX_TOKENS[opts.effort],
     // Native constructor fields on this @langchain/anthropic version — not
     // modelKwargs. They map 1:1 to the raw Anthropic API's output_config and
     // thinking params.
-    outputConfig: { effort: opts.effort },
-    thinking: opts.disableThinking
+    // Haiku 4.5 is used for simple structured classification and does not
+    // support adaptive effort. Sonnet keeps its native effort control.
+    outputConfig: modelTier === "sonnet" ? { effort: opts.effort } : undefined,
+    thinking: opts.disableThinking || modelTier === "haiku"
       ? { type: "disabled" }
       : { type: "adaptive", display: opts.thinkingDisplay ?? "omitted" },
   });

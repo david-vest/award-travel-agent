@@ -11,6 +11,13 @@ import { lastUserText } from "./triage";
 export async function retrieveKnowledgeNode(
   state: AgentStateType,
 ): Promise<Partial<AgentStateType>> {
+  // Search answers must be anchored in flights. With no flights, generic RAG
+  // excerpts become a distracting substitute for the task the user asked us
+  // to perform. Pure knowledge questions still retrieve normally.
+  if (state.intent !== "knowledge" && (state.awardResults?.length ?? 0) === 0) {
+    return { kbDocs: [] };
+  }
+
   try {
     const docs = await retrieveKnowledge(
       lastUserText(state),
