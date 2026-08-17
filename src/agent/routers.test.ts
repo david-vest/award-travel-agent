@@ -3,6 +3,7 @@ import {
   routeAfterGuard,
   routeAfterTriage,
   routeAfterSearch,
+  routeAfterEnrich,
   routeAfterVerify,
   MAX_REVISIONS,
 } from "./routers";
@@ -65,6 +66,18 @@ describe("routeAfterSearch", () => {
 
   it("skips refresh when there are no results", () => {
     expect(routeAfterSearch(s({ ...base, awardResults: [] }))).toBe("enrich_trips");
+  });
+});
+
+describe("routeAfterEnrich", () => {
+  const plan = { origins: ["ORD"], destinations: ["FUK"], cabins: ["business"], nonstopOnly: false, programs: [] };
+
+  it("routes weak exact results into the positioning ladder", () => {
+    expect(routeAfterEnrich(s({ intent: "route_search", searchPlan: plan, awardResults: [], positioningSearchComplete: false }))).toBe("search_positioning");
+  });
+
+  it("does not loop after the bounded positioning search completes", () => {
+    expect(routeAfterEnrich(s({ intent: "route_search", searchPlan: plan, awardResults: [], positioningSearchComplete: true }))).toBe("retrieve_knowledge");
   });
 });
 

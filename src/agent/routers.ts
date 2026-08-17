@@ -1,8 +1,10 @@
 import type { AgentStateType } from "./state";
 import { shouldRefresh } from "./nodes/refresh";
+import { needsPositioningSearch } from "./nodes/search";
 
-export function routeAfterGuard(state: AgentStateType): "triage" | "refuse" {
-  return state.intent === "rejected" ? "refuse" : "triage";
+export function routeAfterGuard(state: AgentStateType): "triage" | "resolve_ui_locations" | "refuse" {
+  if (state.intent === "rejected") return "refuse";
+  return state.tripRequest ? "resolve_ui_locations" : "triage";
 }
 
 export function routeAfterTriage(
@@ -28,6 +30,12 @@ export function routeAfterSearch(
   state: AgentStateType,
 ): "refresh_availability" | "enrich_trips" {
   return shouldRefresh(state) ? "refresh_availability" : "enrich_trips";
+}
+
+export function routeAfterEnrich(
+  state: AgentStateType,
+): "search_positioning" | "retrieve_knowledge" {
+  return needsPositioningSearch(state) ? "search_positioning" : "retrieve_knowledge";
 }
 
 export function routeAfterVerify(

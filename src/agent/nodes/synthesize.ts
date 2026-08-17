@@ -35,6 +35,25 @@ export function buildSynthesisContext(state: AgentStateType): string {
 
   parts.push(`User question:\n${lastUserText(state)}`);
 
+  if (state.locationResolutions?.length) {
+    parts.push(
+      `Destination-to-airport choices (explain these briefly to the user):\n` +
+        state.locationResolutions.map((resolution) =>
+          `- ${resolution.query} → ${resolution.airports.join(", ")}: ${resolution.explanation}`,
+        ).join("\n"),
+    );
+  }
+
+  if (state.searchAttempts?.length) {
+    parts.push(
+      `Bounded route-search ladder (${state.searchAttempts.length} of 4 calls used):\n` +
+        state.searchAttempts.map((attempt, index) =>
+          `${index + 1}. ${attempt.origins.join(",")} → ${attempt.destinations.join(",")} (${attempt.tier}): ${attempt.resultCount} results. ${attempt.reason}`,
+        ).join("\n") +
+        "\nWhen a recommended route differs from the request, explicitly explain the separate positioning flight(s) needed.",
+    );
+  }
+
   const unresolvedPlaces = state.searchPlan?.unresolvedPlaces ?? [];
   const ambiguousPlaces = state.searchPlan?.ambiguousPlaces ?? [];
   if (unresolvedPlaces.length > 0 || ambiguousPlaces.length > 0) {
@@ -66,14 +85,15 @@ export function buildSynthesisContext(state: AgentStateType): string {
     }
   } else {
     parts.push(
-      `Award options found (${options.length}):\n` +
+      `Ranked award options shown in the flight-card rail (${options.length}; first is the current recommendation):\n` +
         options
           .map(
             (o, i) =>
               `${i + 1}. id=${o.availabilityId} ${o.origin}-${o.destination} ${o.date} ` +
               `program=${o.program} cabin=${o.cabin} miles=${o.miles} ` +
               `nonstop=${o.direct} airlines=${o.airlines} ` +
-              `seats=${o.remainingSeats ?? "unknown"} dataUpdatedAt=${o.updatedAt ?? "unknown"}`,
+              `seats=${o.remainingSeats ?? "unknown"} dataUpdatedAt=${o.updatedAt ?? "unknown"} ` +
+              `searchTier=${o.searchTier ?? "exact"} requestedRoute=${o.requestedOrigins?.join("/") ?? "unknown"}-${o.requestedDestinations?.join("/") ?? "unknown"}`,
           )
           .join("\n"),
     );
@@ -82,13 +102,18 @@ export function buildSynthesisContext(state: AgentStateType): string {
   const trips = state.tripSummaries ?? [];
   if (trips.length > 0) {
     parts.push(
-      `Flight details:\n` +
+      `Flight-card details (use only when a field adds decision value; do not restate each card):\n` +
         trips
           .map(
             (t) =>
               `- for=${t.availabilityId} cabin=${t.cabin ?? "unknown"} miles=${t.miles ?? "unknown"} ` +
               `flights=${t.flightNumbers.join(",")} aircraft=${t.aircraft.join(",")} ` +
-              `stops=${t.stops} carriers=${t.carriers.join(",")}`,
+              `stops=${t.stops} connections=${t.connections?.map((connection) =>
+                `${connection.airport}${connection.layoverMinutes != null ? `(${connection.layoverMinutes}m)` : ""}`,
+              ).join(",") || "none"} durationMinutes=${t.durationMinutes ?? "unknown"} ` +
+              `taxes=${t.totalTaxes ?? "unknown"} ${t.taxesCurrency ?? ""} ` +
+              `departsAt=${t.departsAt ?? "unknown"} arrivesAt=${t.arrivesAt ?? "unknown"} ` +
+              `seats=${t.remainingSeats ?? "unknown"} carriers=${t.carriers.join(",")}`,
           )
           .join("\n"),
     );
@@ -127,19 +152,45 @@ export function buildSynthesisContext(state: AgentStateType): string {
 export async function synthesize(
   state: AgentStateType,
 ): Promise<Partial<AgentStateType>> {
-  const model = chat({ effort: "medium" });
+  try {
+    const model = chat({ effort: "medium" });
+    const res = await model.invoke([
+      cachedSystem(SYNTHESIZE_PROMPT),
+      { role: "user", content: buildSynthesisContext(state) },
+    ]);
 
-  const res = await model.invoke([
-    cachedSystem(SYNTHESIZE_PROMPT),
-    { role: "user", content: buildSynthesisContext(state) },
-  ]);
+    const text =
+      typeof res.content === "string"
+        ? res.content
+        : (res.content as Array<{ text?: string }>)
+            .map((b) => b.text ?? "")
+            .join("");
 
-  const text =
-    typeof res.content === "string"
-      ? res.content
-      : (res.content as Array<{ text?: string }>)
-          .map((b) => b.text ?? "")
-          .join("");
+    return { draft: text };
+  } catch {
+    return { draft: fallbackSynthesis(state) };
+  }
+}
 
-  return { draft: text };
+/** A grounded fallback keeps the recorded-fixture demo useful without an LLM key. */
+function fallbackSynthesis(state: AgentStateType): string {
+  const options = state.awardResults ?? [];
+  if (options.length === 0) {
+    return [
+      "**Bottom line:** I couldn’t find award availability matching those exact constraints.",
+      "**Next step:** Widen the dates, allow a connection, or add another points program and search again.",
+    ].join("\n\n");
+  }
+  const lead = options[0];
+  const positioning = Boolean(lead.searchTier && lead.searchTier !== "exact");
+  const fit = lead.direct
+    ? "It is the strongest verified nonstop match."
+    : "It is the strongest verified match, but it includes a connection.";
+  return [
+    `**Bottom line:** Start with the first flight card. ${fit}`,
+    positioning
+      ? `**What matters:** This option uses the ${lead.searchTier?.replaceAll("_", " ")} fallback and requires separate positioning travel.`
+      : "",
+    "**Next step:** Confirm the seat with the booking program before transferring points.",
+  ].filter(Boolean).join("\n\n");
 }

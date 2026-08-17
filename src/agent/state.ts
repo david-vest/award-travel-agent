@@ -2,6 +2,7 @@ import { Annotation, messagesStateReducer } from "@langchain/langgraph";
 import type { BaseMessage } from "@langchain/core/messages";
 import type { AwardOption, TripSummary } from "../tools";
 import type { RetrievedDoc } from "../rag/retriever";
+import type { FlightRecommendation, TripRequest } from "../contracts/travel-search";
 
 export type Intent = "route_search" | "discovery" | "knowledge" | "rejected";
 
@@ -25,7 +26,16 @@ export type SearchPlan = {
   endDate?: string;
   cabins: string[];
   nonstopOnly: boolean;
+  stopPreference?: "nonstop" | "up_to_one" | "any";
   programs: string[];
+  preferredAirlines?: string[];
+  travelers?: number;
+  /** Program-source keyed points available after combining transferable and direct balances. */
+  availablePointsByProgram?: Record<string, number>;
+  /** When true, programs missing from availablePointsByProgram have a zero balance. */
+  filterByPointBalances?: boolean;
+  /** Per-traveler USD cash ceiling, passed to seats.aero and checked again after enrichment. */
+  maxTaxesFeesUsd?: number;
   /** Free-text note explaining choices, surfaced in traces and evals. */
   rationale?: string;
   /**
@@ -57,6 +67,20 @@ export type Violation = {
   detail: string;
 };
 
+export type LocationResolution = {
+  query: string;
+  airports: string[];
+  explanation: string;
+};
+
+export type SearchAttempt = {
+  tier: "exact" | "destination_gateway" | "country_pair" | "region_pair";
+  origins: string[];
+  destinations: string[];
+  reason: string;
+  resultCount: number;
+};
+
 /** Replace-on-write: a fresh search supersedes the previous one entirely. */
 const replace = <T>(defaultValue: () => T) => ({
   reducer: (_current: T, update: T) => update,
@@ -73,8 +97,14 @@ export const AgentState = Annotation.Root({
   refusalReason: Annotation<string | null>(replace<string | null>(() => null)),
 
   searchPlan: Annotation<SearchPlan | null>(replace<SearchPlan | null>(() => null)),
+  /** Present only for a structured form submission; chat continues through planners. */
+  tripRequest: Annotation<TripRequest | null>(replace<TripRequest | null>(() => null)),
+  locationResolutions: Annotation<LocationResolution[]>(replace<LocationResolution[]>(() => [])),
+  searchAttempts: Annotation<SearchAttempt[]>(replace<SearchAttempt[]>(() => [])),
+  positioningSearchComplete: Annotation<boolean>(replace<boolean>(() => false)),
   awardResults: Annotation<AwardOption[]>(replace<AwardOption[]>(() => [])),
   tripSummaries: Annotation<TripSummary[]>(replace<TripSummary[]>(() => [])),
+  recommendations: Annotation<FlightRecommendation[]>(replace<FlightRecommendation[]>(() => [])),
   kbDocs: Annotation<RetrievedDoc[]>(replace<RetrievedDoc[]>(() => [])),
 
   draft: Annotation<string | null>(replace<string | null>(() => null)),

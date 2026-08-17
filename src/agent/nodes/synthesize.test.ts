@@ -149,6 +149,29 @@ describe("buildSynthesisContext", () => {
     expect(ctx).toContain("miles=87500");
   });
 
+  it("includes connection and duration details that can add value beyond the card summary", () => {
+    const s = state({
+      tripSummaries: [
+        {
+          availabilityId: "a1",
+          tripId: "t1",
+          flightNumbers: ["DL1717", "DL121"],
+          aircraft: ["Airbus A220", "Airbus A350-900"],
+          carriers: ["DL"],
+          stops: 1,
+          durationMinutes: 1005,
+          connections: [{ airport: "MSP", layoverMinutes: 141 }],
+          totalTaxes: 38,
+          taxesCurrency: "USD",
+        },
+      ],
+    });
+    const ctx = buildSynthesisContext(s);
+    expect(ctx).toContain("connections=MSP(141m)");
+    expect(ctx).toContain("durationMinutes=1005");
+    expect(ctx).toContain("taxes=38 USD");
+  });
+
   it("surfaces an unresolved place name rather than silently searching without it", () => {
     const s = state({
       searchPlan: {
@@ -189,5 +212,14 @@ describe("SYNTHESIZE_PROMPT", () => {
 
   it("contains no volatile value", () => {
     expect(SYNTHESIZE_PROMPT).not.toMatch(/20\d\d-\d\d-\d\d/);
+  });
+
+  it("treats analysis as decision support instead of a duplicate flight list", () => {
+    expect(SYNTHESIZE_PROMPT).toContain("not to transcribe it");
+    expect(SYNTHESIZE_PROMPT).toContain("**Bottom line:**");
+    expect(SYNTHESIZE_PROMPT).toContain("**What matters:**");
+    expect(SYNTHESIZE_PROMPT).toContain("**Next step:**");
+    expect(SYNTHESIZE_PROMPT).toContain("never exceed 220 words");
+    expect(SYNTHESIZE_PROMPT).toMatch(/Do not enumerate all\s+alternatives/);
   });
 });

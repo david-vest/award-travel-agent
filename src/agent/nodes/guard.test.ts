@@ -33,6 +33,10 @@ const SEARCH_RESET_FIELDS = {
   searchPlan: null,
   awardResults: [],
   tripSummaries: [],
+  recommendations: [],
+  locationResolutions: [],
+  searchAttempts: [],
+  positioningSearchComplete: false,
   kbDocs: [],
   draft: null,
   violations: [],
@@ -52,6 +56,22 @@ describe("guardInput", () => {
     expect(result).toMatchObject(RESET_FIELDS);
     expect(result.intent).toBeNull();
     expect(result.refusalReason).toBeNull();
+  });
+
+  it("accepts a validated structured trip request without spending a model call", async () => {
+    const result = await guardInput({
+      ...stateWith("form submission"),
+      tripRequest: {
+        origin: { code: "SFO", airports: ["SFO"], custom: false },
+        destinations: [{ code: "TYO", airports: ["HND"], custom: false }],
+        startDate: "2026-09-18", endDate: "2026-09-27", flexDays: 2,
+        cabins: ["business"], travelers: 1, stopPreference: "nonstop",
+        preferredAirlines: [], creditCardPrograms: ["chase"], awardPrograms: ["united"],
+        pointBalances: { creditCards: {}, awardPrograms: {} },
+      },
+    } as AgentStateType);
+    expect(chat).not.toHaveBeenCalled();
+    expect(result).toMatchObject(RESET_FIELDS);
   });
 
   it("resets all search-derived state when the model allows the message", async () => {

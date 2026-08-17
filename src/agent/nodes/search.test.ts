@@ -43,10 +43,31 @@ vi.mock("../../rag/store", () => ({
 import {
   searchAwards,
   filterByCabins,
+  filterByPointBalances,
   regionForOrigin,
   rankOptions,
   ENRICH_TOP_N,
+  MAX_ROUTE_SEARCH_CALLS,
+  buildPositioningAttempts,
+  needsPositioningSearch,
+  searchPositioningOptions,
 } from "./search";
+
+describe("filterByPointBalances", () => {
+  it("uses the total trip cost and treats missing program balances as zero", () => {
+    const plan = {
+      origins: ["ORD"], destinations: ["NRT"], cabins: ["business"], nonstopOnly: false,
+      programs: [], travelers: 2, filterByPointBalances: true,
+      availablePointsByProgram: { aeroplan: 180_000 },
+    } satisfies SearchPlan;
+    const filtered = filterByPointBalances([
+      opt({ availabilityId: "within", miles: 90_000 }),
+      opt({ availabilityId: "over", miles: 90_001 }),
+      opt({ availabilityId: "unknown", program: "united", miles: 50_000 }),
+    ], plan);
+    expect(filtered.map((item) => item.availabilityId)).toEqual(["within"]);
+  });
+});
 
 /** A record with BOTH economy and business available — the exact shape that
  * exposed the bug: seats.aero packs all cabins into one record, and a record
@@ -192,6 +213,26 @@ describe("searchAwards", () => {
     expect(result.awardResults).toHaveLength(2);
   });
 
+  it("passes the USD fee ceiling in cents and removes awards above entered balances", async () => {
+    searchMock.mockResolvedValueOnce(searchResponse([multiCabinRecord({ JMileageCost: "90000" })]));
+    const state = {
+      searchPlan: {
+        ...basePlan,
+        cabins: ["business"],
+        travelers: 2,
+        filterByPointBalances: true,
+        availablePointsByProgram: { aeroplan: 170_000 },
+        maxTaxesFeesUsd: 125,
+      },
+      intent: "route_search",
+    } as unknown as AgentStateType;
+
+    const result = await searchAwards(state);
+
+    expect(searchMock).toHaveBeenCalledWith(expect.objectContaining({ max_fees: 12_500 }));
+    expect(result.awardResults).toEqual([]);
+  });
+
   it("[BUG-CABIN-FILTER] filters discovery-branch results by each probe's own cabin, not the plan's flattened union", async () => {
     regionalAvailabilityMock.mockResolvedValueOnce(searchResponse([multiCabinRecord()]));
 
@@ -248,5 +289,65 @@ describe("searchAwards", () => {
 
     expect(result.awardResults).toEqual([]);
     expect(regionalAvailabilityMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("bounded positioning fallback", () => {
+  const fukuokaPlan: SearchPlan = {
+    origins: ["ORD"],
+    destinations: ["FUK"],
+    cabins: ["business"],
+    nonstopOnly: false,
+    stopPreference: "up_to_one",
+    programs: [],
+    travelers: 1,
+  };
+
+  beforeEach(() => searchMock.mockReset());
+
+  it("builds the expected Chicago-to-Fukuoka broadening ladder", () => {
+    expect(buildPositioningAttempts(fukuokaPlan)).toEqual([
+      expect.objectContaining({ tier: "destination_gateway", origins: ["ORD"], destinations: ["TYO", "JPN"] }),
+      expect.objectContaining({ tier: "country_pair", origins: ["USA"], destinations: ["JPN"] }),
+      expect.objectContaining({ tier: "region_pair", origins: ["USA"], destinations: ["ASA"] }),
+    ]);
+  });
+
+  it("never exceeds four total route-search calls", async () => {
+    searchMock.mockResolvedValue(searchResponse([]));
+    const result = await searchPositioningOptions({
+      intent: "route_search",
+      searchPlan: fukuokaPlan,
+      awardResults: [],
+      searchAttempts: [{ tier: "exact", origins: ["ORD"], destinations: ["FUK"], reason: "Exact", resultCount: 0 }],
+    } as unknown as AgentStateType);
+
+    expect(searchMock).toHaveBeenCalledTimes(MAX_ROUTE_SEARCH_CALLS - 1);
+    expect(result.searchAttempts).toHaveLength(MAX_ROUTE_SEARCH_CALLS);
+    expect(result.positioningSearchComplete).toBe(true);
+  });
+
+  it("stops broadening once a fallback returns several reasonable options", async () => {
+    searchMock.mockResolvedValueOnce(searchResponse([
+      multiCabinRecord({ ID: "one", JMileageCost: "70000" }),
+      multiCabinRecord({ ID: "two", JMileageCost: "80000" }),
+      multiCabinRecord({ ID: "three", JMileageCost: "90000" }),
+    ]));
+    await searchPositioningOptions({
+      intent: "route_search", searchPlan: fukuokaPlan, awardResults: [],
+      searchAttempts: [{ tier: "exact", origins: ["ORD"], destinations: ["FUK"], reason: "Exact", resultCount: 0 }],
+    } as unknown as AgentStateType);
+    expect(searchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("broadens when exact options are expensive, high-fee, or insufficiently verified", () => {
+    const baseState = { intent: "route_search", searchPlan: fukuokaPlan, positioningSearchComplete: false };
+    expect(needsPositioningSearch({ ...baseState, awardResults: [] } as unknown as AgentStateType)).toBe(true);
+    expect(needsPositioningSearch({ ...baseState, awardResults: [opt({ miles: 220_000 })], tripSummaries: [] } as unknown as AgentStateType)).toBe(true);
+    expect(needsPositioningSearch({
+      ...baseState,
+      awardResults: [opt({ miles: 80_000 })],
+      tripSummaries: [{ availabilityId: "a", tripId: "t", flightNumbers: [], aircraft: [], carriers: [], stops: 1, totalTaxes: 900, taxesCurrency: "USD", durationMinutes: 900 }],
+    } as unknown as AgentStateType)).toBe(true);
   });
 });

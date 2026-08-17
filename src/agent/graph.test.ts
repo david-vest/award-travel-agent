@@ -14,9 +14,12 @@ vi.mock("./nodes/guard", () => ({
 vi.mock("./nodes/triage", () => ({ triage: vi.fn() }));
 vi.mock("./nodes/plan-search", () => ({ planSearch: vi.fn() }));
 vi.mock("./nodes/plan-discovery", () => ({ planDiscovery: vi.fn() }));
-vi.mock("./nodes/search", () => ({ searchAwards: vi.fn() }));
+vi.mock("./nodes/prepare-ui-search", () => ({ prepareUiSearch: vi.fn() }));
+vi.mock("./nodes/resolve-ui-locations", () => ({ resolveUiLocations: vi.fn() }));
+vi.mock("./nodes/search", () => ({ searchAwards: vi.fn(), searchPositioningOptions: vi.fn(), needsPositioningSearch: vi.fn() }));
 vi.mock("./nodes/enrich", () => ({ enrichTrips: vi.fn() }));
 vi.mock("./nodes/retrieve", () => ({ retrieveKnowledgeNode: vi.fn() }));
+vi.mock("./nodes/rank-recommendations", () => ({ rankRecommendations: vi.fn() }));
 vi.mock("./nodes/synthesize", () => ({ synthesize: vi.fn() }));
 
 import { buildGraphWithoutCheckpointer } from "./graph";
@@ -24,9 +27,12 @@ import { guardInput, refuse } from "./nodes/guard";
 import { triage } from "./nodes/triage";
 import { planSearch } from "./nodes/plan-search";
 import { planDiscovery } from "./nodes/plan-discovery";
-import { searchAwards } from "./nodes/search";
+import { prepareUiSearch } from "./nodes/prepare-ui-search";
+import { resolveUiLocations } from "./nodes/resolve-ui-locations";
+import { searchAwards, searchPositioningOptions, needsPositioningSearch } from "./nodes/search";
 import { enrichTrips } from "./nodes/enrich";
 import { retrieveKnowledgeNode } from "./nodes/retrieve";
+import { rankRecommendations } from "./nodes/rank-recommendations";
 import { synthesize } from "./nodes/synthesize";
 import * as degradeModule from "./nodes/degrade";
 
@@ -44,9 +50,13 @@ describe("graph", () => {
       "triage",
       "plan_search",
       "plan_discovery",
+      "prepare_ui_search",
+      "resolve_ui_locations",
       "search_awards",
+      "search_positioning",
       "enrich_trips",
       "retrieve_knowledge",
+      "rank_recommendations",
       "synthesize",
     ]) {
       expect(nodes).toContain(expected);
@@ -101,19 +111,30 @@ describe("graph traversal", () => {
     vi.mocked(planDiscovery).mockImplementation(
       rec("plan_discovery", { searchPlan: null }),
     );
+    vi.mocked(prepareUiSearch).mockImplementation(
+      rec("prepare_ui_search", { searchPlan: null }),
+    );
+    vi.mocked(resolveUiLocations).mockImplementation(
+      rec("resolve_ui_locations"),
+    );
     vi.mocked(searchAwards).mockImplementation(rec("search_awards", { awardResults: [] }));
+    vi.mocked(searchPositioningOptions).mockImplementation(rec("search_positioning", { awardResults: [], positioningSearchComplete: true }));
+    vi.mocked(needsPositioningSearch).mockReturnValue(false);
     vi.mocked(enrichTrips).mockImplementation(
       rec("enrich_trips", { tripSummaries: [] }),
     );
     vi.mocked(retrieveKnowledgeNode).mockImplementation(
       rec("retrieve_knowledge", { kbDocs: [] }),
     );
+    vi.mocked(rankRecommendations).mockImplementation(
+      rec("rank_recommendations", { recommendations: [] }),
+    );
     vi.mocked(synthesize).mockImplementation(rec("synthesize", { draft: "answer" }));
   });
 
-  function invokeGraph(text: string) {
+  function invokeGraph(text: string, extra: Partial<AgentStateType> = {}) {
     const graph = buildGraphWithoutCheckpointer();
-    return graph.invoke({ messages: [new HumanMessage(text)] } as AgentStateType);
+    return graph.invoke({ messages: [new HumanMessage(text)], ...extra } as AgentStateType);
   }
 
   it("visits plan_search, not plan_discovery, for a route_search intent", async () => {
@@ -121,6 +142,30 @@ describe("graph traversal", () => {
     await invokeGraph("ORD to NRT business class");
     expect(visited).toContain("plan_search");
     expect(visited).not.toContain("plan_discovery");
+  });
+
+  it("uses the deterministic UI preparation path for a structured trip request", async () => {
+    await invokeGraph("form submission", {
+      tripRequest: {
+        origin: { code: "SFO", airports: ["SFO"], custom: false },
+        destinations: [{ code: "TYO", airports: ["HND", "NRT"], custom: false }],
+        startDate: "2026-09-18", endDate: "2026-09-27", flexDays: 2,
+        cabins: ["business"], travelers: 1, stopPreference: "nonstop",
+        preferredAirlines: [], creditCardPrograms: ["chase"], awardPrograms: ["united"],
+        pointBalances: { creditCards: {}, awardPrograms: {} },
+      },
+    });
+    expect(visited).toContain("prepare_ui_search");
+    expect(visited).toContain("resolve_ui_locations");
+    expect(visited).not.toContain("triage");
+    expect(visited).not.toContain("plan_search");
+  });
+
+  it("loops through positioning search once when exact results fail the quality gate", async () => {
+    vi.mocked(needsPositioningSearch).mockReturnValueOnce(true).mockReturnValue(false);
+    await invokeGraph("ORD to FUK business class");
+    expect(visited.filter((node) => node === "search_positioning")).toHaveLength(1);
+    expect(visited.filter((node) => node === "enrich_trips")).toHaveLength(2);
   });
 
   it("visits plan_discovery, not plan_search, for a discovery intent", async () => {

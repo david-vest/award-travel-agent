@@ -39,6 +39,8 @@ export type SearchParams = {
   carriers?: string;
   sources?: string;
   only_direct_flights?: boolean;
+  /** Maximum taxes and fees in USD cents. */
+  max_fees?: number;
   take?: number;
   cursor?: number;
   order_by?: "lowest_mileage";
@@ -52,6 +54,8 @@ export type RegionalParams = {
   cabin?: CabinClass;
   start_date?: string;
   end_date?: string;
+  /** Maximum taxes and fees in USD cents. */
+  max_fees?: number;
   take?: number;
   cursor?: number;
 };
@@ -125,6 +129,7 @@ export type Trip = {
   ID: string;
   RouteID?: string;
   MileageCost?: number;
+  TotalDuration?: number;
   TotalTaxes?: number;
   TaxesCurrency?: string;
   Stops?: number;
@@ -134,6 +139,7 @@ export type Trip = {
   DepartsAt?: string;
   ArrivesAt?: string;
   Aircraft?: string[];
+  Connections?: string[];
   AvailabilitySegments?: TripSegment[];
 };
 

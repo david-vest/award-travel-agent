@@ -10,11 +10,45 @@ export type TripSummary = {
   aircraft: string[];
   carriers: string[];
   stops: number;
+  durationMinutes?: number;
+  connections?: Array<{ airport: string; layoverMinutes?: number }>;
   cabin?: string;
   miles?: number;
+  totalTaxes?: number;
+  taxesCurrency?: string;
+  remainingSeats?: number;
   departsAt?: string;
   arrivesAt?: string;
 };
+
+function currencyFractionDigits(currency: string): number {
+  try {
+    return new Intl.NumberFormat("en-US", { style: "currency", currency }).resolvedOptions().maximumFractionDigits ?? 2;
+  } catch {
+    return 2;
+  }
+}
+
+/** Seats.aero sends tax totals in the currency's minor units (for example, 3800 USD cents). */
+export function minorUnitsToMajor(amount: number, currency = "USD"): number {
+  return amount / (10 ** currencyFractionDigits(currency));
+}
+
+function connectionDetails(trip: Trip): Array<{ airport: string; layoverMinutes?: number }> {
+  const segments = trip.AvailabilitySegments ?? [];
+  if (segments.length > 1) {
+    return segments.slice(0, -1).map((segment, index) => {
+      const next = segments[index + 1];
+      const arrival = Date.parse(segment.ArrivesAt);
+      const departure = Date.parse(next.DepartsAt);
+      const layoverMinutes = Number.isFinite(arrival) && Number.isFinite(departure)
+        ? Math.max(0, Math.round((departure - arrival) / 60_000))
+        : undefined;
+      return { airport: segment.DestinationAirport, layoverMinutes };
+    });
+  }
+  return (trip.Connections ?? []).map((airport) => ({ airport }));
+}
 
 const uniq = (xs: (string | undefined)[]): string[] =>
   [...new Set(xs.filter((x): x is string => Boolean(x)))];
@@ -36,8 +70,13 @@ export function summarizeTrip(trip: Trip, availabilityId: string): TripSummary {
     // `Carriers` field (comma-delimited) is the one that actually carries data.
     carriers: uniq((trip.Carriers ?? "").split(",").map((c) => c.trim())),
     stops: trip.Stops ?? Math.max(0, segments.length - 1),
+    durationMinutes: trip.TotalDuration,
+    connections: connectionDetails(trip),
     cabin: trip.Cabin,
     miles: trip.MileageCost,
+    totalTaxes: trip.TotalTaxes == null ? undefined : minorUnitsToMajor(trip.TotalTaxes, trip.TaxesCurrency ?? "USD"),
+    taxesCurrency: trip.TaxesCurrency,
+    remainingSeats: trip.RemainingSeats,
     departsAt: trip.DepartsAt ?? segments[0]?.DepartsAt,
     arrivesAt: trip.ArrivesAt ?? segments[segments.length - 1]?.ArrivesAt,
   };

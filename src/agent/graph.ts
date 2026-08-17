@@ -2,14 +2,17 @@ import { StateGraph, START, END } from "@langchain/langgraph";
 import { MongoDBSaver } from "@langchain/langgraph-checkpoint-mongodb";
 import { AIMessage } from "@langchain/core/messages";
 import { AgentState, type AgentStateType } from "./state";
-import { routeAfterGuard, routeAfterTriage, routeAfterSearch, routeAfterVerify } from "./routers";
+import { routeAfterGuard, routeAfterTriage, routeAfterSearch, routeAfterEnrich, routeAfterVerify } from "./routers";
 import { guardInput, refuse } from "./nodes/guard";
 import { triage } from "./nodes/triage";
+import { prepareUiSearch } from "./nodes/prepare-ui-search";
+import { resolveUiLocations } from "./nodes/resolve-ui-locations";
 import { planSearch } from "./nodes/plan-search";
 import { planDiscovery } from "./nodes/plan-discovery";
-import { searchAwards } from "./nodes/search";
+import { searchAwards, searchPositioningOptions } from "./nodes/search";
 import { enrichTrips } from "./nodes/enrich";
 import { retrieveKnowledgeNode } from "./nodes/retrieve";
+import { rankRecommendations } from "./nodes/rank-recommendations";
 import { synthesize } from "./nodes/synthesize";
 import { refreshAvailability } from "./nodes/refresh";
 import { verifyGroundedness } from "./nodes/verify";
@@ -40,11 +43,15 @@ export function buildGraphWithoutCheckpointer() {
     .addNode("guard_input", guardInput)
     .addNode("refuse", refuse)
     .addNode("triage", triage)
+    .addNode("resolve_ui_locations", resolveUiLocations)
+    .addNode("prepare_ui_search", prepareUiSearch)
     .addNode("plan_search", planSearch)
     .addNode("plan_discovery", planDiscovery)
     .addNode("search_awards", searchAwards)
+    .addNode("search_positioning", searchPositioningOptions)
     .addNode("enrich_trips", enrichTrips)
     .addNode("retrieve_knowledge", retrieveKnowledgeNode)
+    .addNode("rank_recommendations", rankRecommendations)
     .addNode("synthesize", synthesizeAndCount)
     .addNode("refresh_availability", refreshAvailability)
     .addNode("verify_groundedness", verifyGroundedness)
@@ -54,6 +61,7 @@ export function buildGraphWithoutCheckpointer() {
     .addEdge(START, "guard_input")
     .addConditionalEdges("guard_input", routeAfterGuard, {
       triage: "triage",
+      resolve_ui_locations: "resolve_ui_locations",
       refuse: "refuse",
     })
     .addEdge("refuse", "emit")
@@ -64,6 +72,8 @@ export function buildGraphWithoutCheckpointer() {
       retrieve_knowledge: "retrieve_knowledge",
     })
 
+    .addEdge("resolve_ui_locations", "prepare_ui_search")
+    .addEdge("prepare_ui_search", "search_awards")
     .addEdge("plan_search", "search_awards")
     .addEdge("plan_discovery", "search_awards")
     .addConditionalEdges("search_awards", routeAfterSearch, {
@@ -71,8 +81,13 @@ export function buildGraphWithoutCheckpointer() {
       enrich_trips: "enrich_trips",
     })
     .addEdge("refresh_availability", "enrich_trips")
-    .addEdge("enrich_trips", "retrieve_knowledge")
-    .addEdge("retrieve_knowledge", "synthesize")
+    .addConditionalEdges("enrich_trips", routeAfterEnrich, {
+      search_positioning: "search_positioning",
+      retrieve_knowledge: "retrieve_knowledge",
+    })
+    .addEdge("search_positioning", "enrich_trips")
+    .addEdge("retrieve_knowledge", "rank_recommendations")
+    .addEdge("rank_recommendations", "synthesize")
     .addEdge("synthesize", "verify_groundedness")
     .addConditionalEdges("verify_groundedness", routeAfterVerify, {
       synthesize: "synthesize",
@@ -96,11 +111,15 @@ export async function buildGraph() {
     .addNode("guard_input", guardInput)
     .addNode("refuse", refuse)
     .addNode("triage", triage)
+    .addNode("resolve_ui_locations", resolveUiLocations)
+    .addNode("prepare_ui_search", prepareUiSearch)
     .addNode("plan_search", planSearch)
     .addNode("plan_discovery", planDiscovery)
     .addNode("search_awards", searchAwards)
+    .addNode("search_positioning", searchPositioningOptions)
     .addNode("enrich_trips", enrichTrips)
     .addNode("retrieve_knowledge", retrieveKnowledgeNode)
+    .addNode("rank_recommendations", rankRecommendations)
     .addNode("synthesize", synthesizeAndCount)
     .addNode("refresh_availability", refreshAvailability)
     .addNode("verify_groundedness", verifyGroundedness)
@@ -110,6 +129,7 @@ export async function buildGraph() {
     .addEdge(START, "guard_input")
     .addConditionalEdges("guard_input", routeAfterGuard, {
       triage: "triage",
+      resolve_ui_locations: "resolve_ui_locations",
       refuse: "refuse",
     })
     .addEdge("refuse", "emit")
@@ -118,6 +138,8 @@ export async function buildGraph() {
       plan_discovery: "plan_discovery",
       retrieve_knowledge: "retrieve_knowledge",
     })
+    .addEdge("resolve_ui_locations", "prepare_ui_search")
+    .addEdge("prepare_ui_search", "search_awards")
     .addEdge("plan_search", "search_awards")
     .addEdge("plan_discovery", "search_awards")
     .addConditionalEdges("search_awards", routeAfterSearch, {
@@ -125,8 +147,13 @@ export async function buildGraph() {
       enrich_trips: "enrich_trips",
     })
     .addEdge("refresh_availability", "enrich_trips")
-    .addEdge("enrich_trips", "retrieve_knowledge")
-    .addEdge("retrieve_knowledge", "synthesize")
+    .addConditionalEdges("enrich_trips", routeAfterEnrich, {
+      search_positioning: "search_positioning",
+      retrieve_knowledge: "retrieve_knowledge",
+    })
+    .addEdge("search_positioning", "enrich_trips")
+    .addEdge("retrieve_knowledge", "rank_recommendations")
+    .addEdge("rank_recommendations", "synthesize")
     .addEdge("synthesize", "verify_groundedness")
     .addConditionalEdges("verify_groundedness", routeAfterVerify, {
       synthesize: "synthesize",

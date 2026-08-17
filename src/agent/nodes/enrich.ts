@@ -54,12 +54,12 @@ export async function enrichTrips(
   const top = (state.awardResults ?? []).slice(0, ENRICH_TOP_N);
   if (top.length === 0) return { tripSummaries: [] };
 
-  const client = await getClient();
-  const tripsTool = makeGetTripDetailsTool(client);
-  const model = chat({ effort: "low" }).bindTools([tripsTool]);
-
-  let response;
+  let response: { tool_calls?: ToolCallLike[] };
+  let tripsTool: ReturnType<typeof makeGetTripDetailsTool>;
   try {
+    const client = await getClient();
+    tripsTool = makeGetTripDetailsTool(client);
+    const model = chat({ effort: "low" }).bindTools([tripsTool]);
     response = await model.invoke([
       plainSystem(ENRICH_PROMPT),
       { role: "user", content: describeCandidates(top) },
@@ -98,5 +98,7 @@ export async function enrichTrips(
     }
   }
 
-  return { tripSummaries: summaries };
+  const merged = new Map((state.tripSummaries ?? []).map((summary) => [`${summary.availabilityId}:${summary.tripId}`, summary]));
+  for (const summary of summaries) merged.set(`${summary.availabilityId}:${summary.tripId}`, summary);
+  return { tripSummaries: [...merged.values()] };
 }

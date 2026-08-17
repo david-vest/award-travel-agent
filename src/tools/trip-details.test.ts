@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { z } from "zod";
-import { summarizeTrip, makeGetTripDetailsTool, type TripSummary } from "./trip-details";
+import { minorUnitsToMajor, summarizeTrip, makeGetTripDetailsTool, type TripSummary } from "./trip-details";
 import type { Trip } from "./seats-aero/types";
 import type { SeatsAeroClient } from "./seats-aero";
 
@@ -34,6 +34,28 @@ describe("summarizeTrip", () => {
 
   it("reports stop count", () => {
     expect(summarizeTrip(trip, "avail-1").stops).toBe(0);
+  });
+
+  it("carries provider itinerary duration in minutes", () => {
+    expect(summarizeTrip({ ...trip, TotalDuration: 760 }, "avail-1").durationMinutes).toBe(760);
+  });
+
+  it("converts tax totals from minor units using the provider currency", () => {
+    expect(minorUnitsToMajor(3800, "USD")).toBe(38);
+    expect(minorUnitsToMajor(11240, "CAD")).toBe(112.4);
+    expect(minorUnitsToMajor(3800, "JPY")).toBe(3800);
+  });
+
+  it("derives a connection airport and layover from consecutive segments", () => {
+    const multi: Trip = {
+      ...trip,
+      Stops: 1,
+      AvailabilitySegments: [
+        { ...trip.AvailabilitySegments![0], DestinationAirport: "DFW", ArrivesAt: "2026-09-14T12:00:00Z" },
+        { ...trip.AvailabilitySegments![0], OriginAirport: "DFW", DestinationAirport: "HND", DepartsAt: "2026-09-14T14:30:00Z" },
+      ],
+    };
+    expect(summarizeTrip(multi, "avail-1").connections).toEqual([{ airport: "DFW", layoverMinutes: 150 }]);
   });
 
   it("carries the availabilityId through as a join key to AwardOption", () => {

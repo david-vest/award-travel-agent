@@ -34,6 +34,10 @@ const RESET_TURN_STATE: Partial<AgentStateType> = {
   searchPlan: null,
   awardResults: [],
   tripSummaries: [],
+  recommendations: [],
+  locationResolutions: [],
+  searchAttempts: [],
+  positioningSearchComplete: false,
   kbDocs: [],
   draft: null,
   violations: [],
@@ -62,19 +66,22 @@ export async function guardInput(
     revisionCount: state.revisionCount ? -state.revisionCount : 0,
   };
 
+  // Form input is validated and bounded at the API boundary, so it does not
+  // need an LLM call just to establish that this is an award-travel search.
+  if (state.tripRequest) return { ...resetTurnState, intent: null, refusalReason: null };
+
   // Nothing to screen. Let triage deal with the empty case.
   if (text.trim().length === 0) return { ...resetTurnState, intent: null };
-
-  const model = chat({ effort: "low", disableThinking: true }).withStructuredOutput(
-    guardSchema,
-    { name: "guard_decision" },
-  );
 
   // thinking:"adaptive" + withStructuredOutput's forced tool calling don't
   // always compose cleanly (see models.ts). A guard failure should not block
   // a legitimate user over a transient infra hiccup — this is a travel
   // concierge, not a security-critical system, so fail OPEN.
   try {
+    const model = chat({ effort: "low", disableThinking: true }).withStructuredOutput(
+      guardSchema,
+      { name: "guard_decision" },
+    );
     const result = await model.invoke([
       plainSystem(GUARD_PROMPT),
       { role: "user", content: text },

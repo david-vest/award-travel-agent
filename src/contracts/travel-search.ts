@@ -1,0 +1,87 @@
+import { z } from "zod";
+
+export const CABIN_VALUES = ["economy", "premium", "business", "first"] as const;
+export const STOP_PREFERENCES = ["nonstop", "up_to_one", "any"] as const;
+
+const tripLocationSchema = z.object({
+  code: z.string().trim().min(1).max(100),
+  airports: z.array(z.string().length(3)).default([]),
+  /** True only for a free-form place the advisor explicitly asks Roam to resolve. */
+  custom: z.boolean().default(false),
+});
+
+export const tripRequestSchema = z.object({
+  origin: tripLocationSchema,
+  destinations: z.array(tripLocationSchema).min(1),
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  flexDays: z.number().int().min(0).max(14),
+  cabins: z.array(z.enum(CABIN_VALUES)).min(1),
+  travelers: z.number().int().min(1).max(9),
+  stopPreference: z.enum(STOP_PREFERENCES),
+  preferredAirlines: z.array(z.string().min(2).max(3)).default([]),
+  creditCardPrograms: z.array(z.string()).default([]),
+  awardPrograms: z.array(z.string()).default([]),
+  pointBalances: z.object({
+    creditCards: z.record(z.string(), z.number().int().nonnegative()).default({}),
+    awardPrograms: z.record(z.string(), z.number().int().nonnegative()).default({}),
+  }).default({ creditCards: {}, awardPrograms: {} }),
+  /** Per-traveler cash ceiling. Seats.aero's max_fees parameter uses USD cents. */
+  maxTaxesFeesUsd: z.number().nonnegative().max(100_000).optional(),
+  notes: z.string().trim().max(1_000).optional(),
+});
+
+export type TripRequest = z.infer<typeof tripRequestSchema>;
+
+export const agentRunRequestSchema = z.object({
+  threadId: z.string().uuid().optional(),
+  request: tripRequestSchema.optional(),
+  message: z.string().trim().min(1).max(2_000).optional(),
+}).superRefine((value, ctx) => {
+  if (!value.request && !value.message) ctx.addIssue({ code: "custom", message: "A trip request or follow-up message is required." });
+});
+
+export type AgentRunRequest = z.infer<typeof agentRunRequestSchema>;
+
+export type RecommendationConfidence = "high" | "medium" | "low";
+
+export type FlightRecommendation = {
+  id: string;
+  rank: number;
+  origin: string;
+  destination: string;
+  date: string;
+  cabin: string;
+  miles: number;
+  taxes?: { amount: number; currency: string };
+  program: { id: string; label: string };
+  carriers: string[];
+  direct: boolean;
+  stops?: number;
+  connections?: Array<{ airport: string; layoverMinutes?: number }>;
+  remainingSeats?: number;
+  departsAt?: string;
+  arrivesAt?: string;
+  durationMinutes?: number;
+  flightNumbers: string[];
+  aircraft: string[];
+  refreshedAt?: string;
+  reason: string;
+  scoreFactors: Array<{ label: string; value: string }>;
+  confidence: RecommendationConfidence;
+  positioning?: {
+    tier: "destination_gateway" | "country_pair" | "region_pair";
+    before?: string;
+    after?: string;
+    explanation: string;
+  };
+};
+
+export type AgentStage = "search" | "rules" | "rank";
+export type AgentEvent =
+  | { type: "run_started"; threadId: string }
+  | { type: "stage"; stage: AgentStage; status: "active" | "complete"; detail?: string; elapsedMs?: number }
+  | { type: "results"; recommendations: FlightRecommendation[] }
+  | { type: "answer_delta"; text: string }
+  | { type: "complete"; answer: string; recommendations: FlightRecommendation[]; refreshedAt?: string }
+  | { type: "error"; code: string; message: string; retryable: boolean };

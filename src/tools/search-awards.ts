@@ -13,6 +13,11 @@ export type AwardOption = {
   airlines: string;
   remainingSeats?: number;
   updatedAt?: string;
+  /** How far the bounded search ladder broadened beyond the requested route. */
+  searchTier?: "exact" | "destination_gateway" | "country_pair" | "region_pair";
+  searchReason?: string;
+  requestedOrigins?: string[];
+  requestedDestinations?: string[];
 };
 
 const CABIN_FIELDS = [

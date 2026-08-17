@@ -1,7 +1,16 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // Keep the screen-recording surface focused on the product UI.
+  devIndicators: false,
+  async rewrites() {
+    return [
+      {
+        source: "/api/logos/:path*",
+        destination: "https://seats.aero/static/carriersng/:path*",
+      },
+    ];
+  },
 };
 
 export default nextConfig;
