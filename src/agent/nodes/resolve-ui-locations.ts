@@ -4,6 +4,7 @@ import { chat } from "../models";
 import type { AgentStateType, LocationResolution } from "../state";
 import { AIRPORTS } from "../../tools/locations/data";
 import { resolveLocation } from "../../tools/locations/resolve";
+import { resolveSeatsAeroSearchCode } from "../../tools/seats-aero/multi-city-codes";
 
 const knownIatas = new Set(AIRPORTS.map((airport) => airport.iata));
 const resolutionSchema = z.object({
@@ -17,12 +18,24 @@ const resolutionSchema = z.object({
 type LocationInput = { code: string; airports: string[]; custom: boolean };
 
 function deterministicResolution(location: LocationInput): LocationResolution | null {
-  // A custom place is deliberately resolved by the agent, even if its text
-  // happens to resemble a city in our local data. This is how “Sorrento” can
-  // resolve to its practical gateway rather than a brittle hand-authored map.
-  if (location.airports.length || location.custom) return null;
+  if (location.airports.length) return null;
   const query = location.code.trim();
+  // Known provider groups must win even when the user entered them through
+  // the free-form UI path. Otherwise "Asia" is sent to the model, whose output
+  // is intentionally restricted to real IATA airports and cannot return ASA.
+  const searchCode = resolveSeatsAeroSearchCode(query);
+  if (searchCode) {
+    return { query, airports: [searchCode.code], explanation: `${query} resolved to Seats.aero search code ${searchCode.code}.` };
+  }
   const resolved = resolveLocation(query);
+  // Regions without an equivalent provider group still get a deterministic,
+  // bounded set of major gateways instead of becoming an empty search.
+  if (resolved.kind === "region") {
+    return { query, airports: resolved.representativeIatas, explanation: `${query} resolved to major gateways in ${resolved.region}.` };
+  }
+  // Other custom places are deliberately resolved by the agent. This is how
+  // “Sorrento” maps to its practical gateway rather than a brittle local map.
+  if (location.custom) return null;
   if (resolved.kind === "airports") {
     return { query, airports: resolved.iatas, explanation: `${query} resolved to ${resolved.iatas.join(", ")}.` };
   }

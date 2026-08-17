@@ -13,9 +13,12 @@ import { normalizeResults, type AwardOption, type TripSummary } from "../../tool
 import { mongoClient, DB_NAME } from "../../rag/store";
 import { probesFromPlan } from "./plan-discovery";
 import { AIRPORTS } from "../../tools/locations/data";
-import { MULTI_CITY_CODES, countryGroup, primaryGatewayMetro, regionGroup } from "../../tools/locations/multi-city-codes";
 import { MILEAGE_PROGRAMS, type Region } from "../../tools/seats-aero/types";
 import {
+  SEATS_AERO_SEARCH_CODES,
+  countryGroup,
+  primaryGatewayMetro,
+  regionGroup,
   resolveSeatsAeroSearchCode,
   searchCodeForRegion,
 } from "../../tools/seats-aero/multi-city-codes";
@@ -180,7 +183,7 @@ export function buildPositioningAttempts(plan: SearchPlan): RouteAttempt[] {
 
   const originCountry = countryGroup(requestedOrigin.country);
   const destinationCountry = countryGroup(requestedDestination.country);
-  const destinationGateway = primaryGatewayMetro(destinationCountry) ?? MULTI_CITY_CODES.find((group) =>
+  const destinationGateway = primaryGatewayMetro(destinationCountry) ?? SEATS_AERO_SEARCH_CODES.find((group) =>
     group.kind === "metro" && group.airports.some((code) => airport(code)?.country === requestedDestination.country),
   );
   const destinationRegion = regionGroup(requestedDestination.region);

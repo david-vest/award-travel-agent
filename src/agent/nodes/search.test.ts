@@ -510,6 +510,14 @@ describe("bounded positioning fallback", () => {
     ]);
   });
 
+  it("uses the published Germany group instead of the stale legacy code", () => {
+    expect(buildPositioningAttempts({ ...fukuokaPlan, destinations: ["FRA"] })).toEqual([
+      expect.objectContaining({ tier: "destination_gateway", destinations: ["GCR"] }),
+      expect.objectContaining({ tier: "country_pair", origins: ["USA"], destinations: ["GCR"] }),
+      expect.objectContaining({ tier: "region_pair", origins: ["USA"], destinations: ["EUR"] }),
+    ]);
+  });
+
   it("never exceeds four total route-search calls", async () => {
     searchMock.mockResolvedValue(searchResponse([]));
     const result = await searchPositioningOptions({

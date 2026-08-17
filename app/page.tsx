@@ -16,7 +16,7 @@ import { useAgentRun } from "./useAgentRun";
 import styles from "./page.module.css";
 
 type LocationOption = {
-  kind: "airport" | "city" | "custom"; code: string; city: string; country: string; airports: string[];
+  kind: "airport" | "city" | "group" | "custom"; code: string; city: string; country: string; airports: string[];
 };
 
 type Cabin = "economy" | "premium" | "business" | "first";
@@ -302,13 +302,13 @@ function AirportPicker({ title, icon, value, multiple, open, onToggle, onChange 
     {multiple && <div className={styles.selectedLocations}>{value.map((item) => <button key={item.code} onClick={() => select(item)}>{item.city}<X size={12} /></button>)}</div>}
     <label className={styles.searchBox}><MagnifyingGlass size={16} /><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && query.trim()) { event.preventDefault(); select({ kind: "custom", code: query.trim(), city: query.trim(), country: "Roam will choose the airport", airports: [] }); } }} placeholder={multiple ? "Search a city, place, or airport to add" : "Search city, place, airport, or code"} /></label>
     <div className={styles.locationResults}>
-      {!query && <p className={styles.menuPrompt}>Try “Tokyo”, “London”, or “JFK”.</p>}
+      {!query && <p className={styles.menuPrompt}>Try “Tokyo”, “Europe”, “EUR”, or “JFK”.</p>}
       {query && resultQuery !== query && <p className={styles.menuPrompt}>Searching airports…</p>}
-      {query && resultQuery === query && <button className={styles.customLocation} onClick={() => { select({ kind: "custom", code: query.trim(), city: query.trim(), country: "Roam will choose the airport", airports: [] }); setQuery(""); }}><span className={styles.customLocationIcon}><Sparkle size={15} weight="fill" /></span><span className={styles.locationCopy}><strong>Search near “{query.trim()}”</strong><small>Roam will select and verify the best commercial airport</small></span><span className={styles.cityTag}>Let Roam decide</span><ArrowRight size={14} /></button>}
       {resultQuery === query && results.map((option) => {
         const selected = value.some((item) => item.code === option.code);
-        return <button key={`${option.kind}-${option.code}`} className={selected ? styles.selectedOption : ""} onClick={() => select(option)}><span className={styles.iataBadge}>{option.code}</span><span className={styles.locationCopy}><strong>{option.city}</strong><small>{option.kind === "city" ? `${option.airports.join(", ")} · ${option.country}` : option.country}</small></span>{option.kind === "city" && <span className={styles.cityTag}>All airports</span>}<Check size={14} weight="bold" /></button>;
+        return <button key={`${option.kind}-${option.code}`} className={selected ? styles.selectedOption : ""} onClick={() => select(option)}><span className={styles.iataBadge}>{option.code}</span><span className={styles.locationCopy}><strong>{option.city}</strong><small>{option.kind === "city" ? `${option.airports.join(", ")} · ${option.country}` : option.country}</small></span>{option.kind === "city" && <span className={styles.cityTag}>All airports</span>}{option.kind === "group" && <span className={styles.cityTag}>Multi-city</span>}<Check size={14} weight="bold" /></button>;
       })}
+      {query && resultQuery === query && <button className={styles.customLocation} onClick={() => { select({ kind: "custom", code: query.trim(), city: query.trim(), country: "Roam will choose the airport", airports: [] }); setQuery(""); }}><span className={styles.customLocationIcon}><Sparkle size={15} weight="fill" /></span><span className={styles.locationCopy}><strong>Search near “{query.trim()}”</strong><small>Roam will select and verify the best commercial airport</small></span><span className={styles.cityTag}>Let Roam decide</span><ArrowRight size={14} /></button>}
     </div>
   </div>}</div>;
 }
