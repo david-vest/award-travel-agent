@@ -50,6 +50,21 @@ export function awardProgramForSource(source: string): AwardProgram | undefined 
   return AWARD_PROGRAMS.find((program) => program.source === source);
 }
 
+/**
+ * Selected credit cards that actually transfer to the given award program —
+ * never a card the user didn't select. `selectedCardIds` is `string[]`, not
+ * `CreditCardProgramId[]`, because it's read straight from the loosely-typed
+ * TripRequest contract (`creditCardPrograms: z.array(z.string())`).
+ */
+export function transferPartnersFor(
+  awardProgramId: AwardProgramId,
+  selectedCardIds: readonly string[],
+): CreditCardProgram[] {
+  return CREDIT_CARD_PROGRAMS.filter(
+    (card) => selectedCardIds.includes(card.id) && card.programs.includes(awardProgramId),
+  );
+}
+
 export function sourcesForAwardPrograms(ids: string[]): string[] {
   return ids.flatMap((id) => AWARD_PROGRAMS.filter((program) => program.id === id).map((program) => program.source));
 }
