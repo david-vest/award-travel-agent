@@ -47,6 +47,13 @@ describe("routeAfterSearch", () => {
   const stale = new Date(Date.now() - 12 * 3_600_000).toISOString();
   const base = {
     intent: "route_search" as const,
+    searchPlan: {
+      origins: ["ORD"],
+      destinations: ["NRT"],
+      cabins: ["business"],
+      nonstopOnly: false,
+      programs: [],
+    },
     awardResults: [
       { availabilityId: "a1", origin: "ORD", destination: "NRT", date: "2026-09-14",
         program: "aeroplan", cabin: "business", miles: 87500, direct: true,

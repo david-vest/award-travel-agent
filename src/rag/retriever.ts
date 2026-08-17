@@ -81,6 +81,28 @@ export function buildRetrievalQuery(
   return lines.join("\n");
 }
 
+/** Voyage's free/unfunded tier caps at 3 requests/minute — see retryOn429's comment. */
+const RATE_LIMIT_RETRY_DELAY_MS = 21_000;
+
+/**
+ * A 429 from Voyage is a transient rate-limit, not a genuine outage — the
+ * account is capped at 3 requests/minute until a payment method is added.
+ * retrieve.ts's caller-level catch treats ANY throw here as "outage, degrade
+ * gracefully," which is correct for a real failure but wastes a retrieval
+ * that would have succeeded 21 seconds later. One retry, paced just past the
+ * window, converts most of those into successful retrievals instead of
+ * papering over rate-limit noise as if the vector store were actually down.
+ */
+async function retryOn429<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    if (!String((err as Error)?.message).includes("429")) throw err;
+    await new Promise((r) => setTimeout(r, RATE_LIMIT_RETRY_DELAY_MS));
+    return fn();
+  }
+}
+
 export async function retrieveKnowledge(
   userQuestion: string,
   options: AwardOption[],
@@ -91,13 +113,12 @@ export async function retrieveKnowledge(
   const query = buildRetrievalQuery(userQuestion, options, trips);
   const preFilter = buildPreFilter(options);
 
-  let docs = await store.similaritySearch(query, k, preFilter);
+  const docs = await retryOn429(() => store.similaritySearch(query, k, preFilter));
 
-  // A narrow filter can legitimately match nothing — an unusual carrier with no
-  // KB coverage. Fall back to unfiltered rather than returning no knowledge.
-  if (docs.length === 0 && preFilter) {
-    docs = await store.similaritySearch(query, k);
-  }
+  // For a flight-backed answer, an empty carrier/program-filtered result is
+  // the correct result. Falling back to the whole KB injects unrelated airline
+  // trivia that cannot help compare the flights actually found. Pure knowledge
+  // questions still have no preFilter and continue to search the whole KB.
 
   return docs.map((d) => ({
     id: String(d.metadata.id ?? "unknown"),

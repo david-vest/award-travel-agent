@@ -1,8 +1,10 @@
 import { z } from "zod";
-import type { BaseMessage } from "@langchain/core/messages";
+import { trimMessages, type BaseMessage } from "@langchain/core/messages";
 import { chat } from "../models";
+import { estimateTokens } from "../cache";
 import { plainSystem } from "../cache";
 import { TRIAGE_PROMPT } from "../prompts/triage";
+import { inferMultiCityRoute } from "../../tools/seats-aero/multi-city-codes";
 import type { AgentStateType, Intent } from "../state";
 
 export const triageSchema = z.object({
@@ -37,16 +39,36 @@ export function lastUserText(state: AgentStateType): string {
 }
 
 /**
+ * Token budget for the prior-turn text hint below, not a message count —
+ * a fixed "last N messages" cutoff either truncates a short exchange
+ * needlessly or lets one giant message dominate. 1500 tokens covers several
+ * normal turns of chat while staying cheap even on a long-running thread.
+ */
+export const CONVERSATION_CONTEXT_MAX_TOKENS = 1500;
+
+/**
  * Prior turns give a planner/classifier the context to resolve a bare
  * "Tokyo" or a follow-up like "actually nonstop only". Exported so other
- * nodes (e.g. plan-search's planner) can reuse the same convention instead
- * of duplicating it.
+ * nodes (e.g. plan-search's and plan-discovery's planners) can reuse the
+ * same convention instead of duplicating it. This is a secondary
+ * disambiguation hint, not the system's primary memory — sticky SearchPlan
+ * fields (state.ts's mergeSearchPlan) are the source of truth for what
+ * carries forward turn to turn; this text window just helps a planner
+ * resolve a new bare reference against recent chat.
  */
-export function conversationContext(state: AgentStateType): string {
+export async function conversationContext(state: AgentStateType): Promise<string> {
   const messages = (state.messages ?? []) as BaseMessage[];
-  const prior = messages.slice(0, -1).slice(-4);
+  const prior = messages.slice(0, -1);
   if (prior.length === 0) return "";
-  return prior
+
+  const trimmed = await trimMessages(prior, {
+    maxTokens: CONVERSATION_CONTEXT_MAX_TOKENS,
+    tokenCounter: (msgs) =>
+      msgs.reduce((sum, m) => sum + estimateTokens(flattenContent(m.content)), 0),
+    strategy: "last",
+  });
+
+  return trimmed
     .map(
       (m) =>
         `${m._getType() === "human" ? "User" : "Assistant"}: ${flattenContent(m.content).slice(0, 300)}`,
@@ -58,12 +80,26 @@ export async function triage(
   state: AgentStateType,
 ): Promise<Partial<AgentStateType>> {
   const text = lastUserText(state);
-  const context = conversationContext(state);
 
-  const model = chat({ effort: "low", disableThinking: true }).withStructuredOutput(
-    triageSchema,
-    { name: "triage_decision" },
-  );
+  // Published multi-city groups on both sides are already a complete route.
+  // Do this before the classifier: the LangSmith regression returned a valid
+  // but wrong `discovery` label, so catch-only heuristics could never repair it.
+  const explicitMultiCityRoute = inferMultiCityRoute(text);
+  if (
+    explicitMultiCityRoute.origins.length > 0 &&
+    explicitMultiCityRoute.destinations.length > 0
+  ) {
+    return { intent: "route_search" };
+  }
+
+  const context = await conversationContext(state);
+
+  const model = chat({
+    model: "haiku",
+    effort: "low",
+    maxTokens: 256,
+    disableThinking: true,
+  }).withStructuredOutput(triageSchema, { name: "triage_decision" });
 
   // Conversation context goes in the USER turn, never the system prompt —
   // it changes every request and would invalidate any cached prefix.
@@ -83,6 +119,22 @@ export async function triage(
 
     return { intent: result.intent as Intent };
   } catch {
+    // A classifier outage must not turn an obvious availability request into
+    // a knowledge-only answer. Prefer the existing structured trip memory,
+    // then use a conservative text heuristic before falling back to knowledge.
+    if (state.searchPlan) return { intent: "route_search" };
+    if (/\b(where (?:can|should)|somewhere|trip ideas?|inspiration)\b/i.test(text)) {
+      return { intent: "discovery" };
+    }
+    if (
+      /\b(flights?|availability|nonstop|direct)\b/i.test(text) ||
+      /\b(business class|first class|economy|premium economy)\b.*\b(to|from)\b/i.test(
+        text,
+      ) ||
+      /\bfrom\b.+\bto\b/i.test(text)
+    ) {
+      return { intent: "route_search" };
+    }
     return { intent: "knowledge" };
   }
 }

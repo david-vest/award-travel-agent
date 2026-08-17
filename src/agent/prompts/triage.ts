@@ -20,4 +20,9 @@ no availability lookup.
 
 Ambiguity rule: a bare place name with no other context ("Tokyo") is
 route_search only if an origin appears earlier in the conversation. Otherwise
-classify it discovery and let the planner ask.`;
+classify it discovery and let the planner ask.
+
+Default rule: a message with no travel content at all — a greeting, small
+talk, or an off-topic request ("hi there", "write me a Python script") — is
+knowledge, not discovery. Discovery forces a search for destinations; nothing
+in these messages licenses one.`;

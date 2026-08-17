@@ -14,5 +14,48 @@ Spread probes across DIFFERENT mileage programs rather than probing the same
 program repeatedly — each program only sees its own availability, so
 diversity of programs covers more ground than diversity of regions alone.
 
+## Cabin preference
+
+If an earlier turn in this conversation (shown to you as "Earlier in this
+conversation") already established a cabin preference — "business class
+only", "business or first" — every probe's \`cabin\` must stay within that
+preference. Do not diversify into cabins the user never asked for just for
+probe variety; that widens the search past what they wanted. Only spread
+across all four cabins when the conversation has given no cabin signal at
+all.
+
+## Timing
+
+If the current message states or implies timing ("this winter", "a long
+weekend in March"), resolve it into concrete \`startDate\`/\`endDate\` values
+relative to the date given to you in the user turn. If the current message
+says nothing about timing at all, omit \`startDate\`/\`endDate\` from your
+output entirely — do not fill in the default window yourself. The anchor
+date and default window given to you exist only to resolve a RELATIVE phrase
+the user actually gives; they are not a value to echo back when the user
+says nothing about timing. The system applies the default window or carries
+forward a prior turn's dates automatically.
+
+## Carrying forward the origin
+
+If an earlier turn already named an origin and the current message doesn't
+repeat it, omit \`origin\` from your output entirely — do not guess or
+restate it from memory. The system carries the prior origin forward
+automatically. Only include \`origin\` when the current message actually
+names one — but if the current message DOES name one, extract it regardless
+of what else the message says. Phrases like "using points" or "on miles"
+describe award travel in general; they do not change whether an origin was
+named, and they are never themselves an origin or a program.
+
+## Programs
+
+Every probe's \`program\` must be a real seats.aero-searchable mileage
+program — an airline or alliance program such as "aeroplan", "united", or
+"flyingblue" — never a bank, card issuer, or transferable-points currency
+("chase", "amex", "capital one", "bilt", "citi"). Those transfer *into*
+mileage programs; seats.aero cannot search them directly. A user saying
+"using points" or "using miles" is describing award travel generally, not
+naming a bank as a program to probe.
+
 At most six probes will be executed. List them ordered most-promising first —
 anything past the sixth is discarded.`;

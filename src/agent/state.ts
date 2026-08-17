@@ -5,6 +5,7 @@ import type { RetrievedDoc } from "../rag/retriever";
 import type { FlightRecommendation, TripRequest } from "../contracts/travel-search";
 
 export type Intent = "route_search" | "discovery" | "knowledge" | "rejected";
+export type SearchStatus = "not_run" | "searched" | "provider_error";
 
 /**
  * One program+region+cabin combination the discovery planner decided is worth
@@ -87,6 +88,52 @@ const replace = <T>(defaultValue: () => T) => ({
   default: defaultValue,
 });
 
+/**
+ * searchPlan's reducer. Unlike the other channels' blind `replace`, this
+ * merges: a field the current turn's node output omits (undefined) keeps
+ * whatever the checkpointer restored from the prior turn ("sticky" trip
+ * criteria — origin, destination, dates, cabin). A field the update DOES
+ * provide — including an explicit `false` or an empty array, both of which
+ * are meaningful, present values, not "unset" — always wins. Per-turn
+ * diagnostic fields (rationale, unresolvedPlaces, ambiguousPlaces,
+ * discoveryProbes) are the opposite: they always take the update's value,
+ * even when that's undefined, because a stale diagnostic from three turns
+ * ago must never resurface on an unrelated turn.
+ *
+ * A literal `null` update (rather than a partial object) is a deliberate
+ * full reset — prepareUiSearch returns this when a UI run carries no
+ * request — and bypasses merging entirely rather than throwing on
+ * `update.origins`.
+ */
+function mergeSearchPlan(
+  current: SearchPlan | null,
+  update: Partial<SearchPlan> | null,
+): SearchPlan | null {
+  if (update === null) return null;
+  const merged: SearchPlan = {
+    origins: update.origins ?? current?.origins ?? [],
+    destinations: update.destinations ?? current?.destinations ?? [],
+    destinationRegion: update.destinationRegion ?? current?.destinationRegion,
+    startDate: update.startDate ?? current?.startDate,
+    endDate: update.endDate ?? current?.endDate,
+    cabins: update.cabins ?? current?.cabins ?? [],
+    nonstopOnly: update.nonstopOnly ?? current?.nonstopOnly ?? false,
+    programs: update.programs ?? current?.programs ?? [],
+    rationale: update.rationale,
+    unresolvedPlaces: update.unresolvedPlaces,
+    ambiguousPlaces: update.ambiguousPlaces,
+    discoveryProbes: update.discoveryProbes,
+  };
+  if (!merged.startDate && !merged.endDate) {
+    const today = new Date();
+    merged.startDate = today.toISOString().slice(0, 10);
+    merged.endDate = new Date(today.getTime() + 60 * 86_400_000)
+      .toISOString()
+      .slice(0, 10);
+  }
+  return merged;
+}
+
 export const AgentState = Annotation.Root({
   messages: Annotation<BaseMessage[]>({
     reducer: messagesStateReducer,
@@ -96,13 +143,17 @@ export const AgentState = Annotation.Root({
   intent: Annotation<Intent | null>(replace<Intent | null>(() => null)),
   refusalReason: Annotation<string | null>(replace<string | null>(() => null)),
 
-  searchPlan: Annotation<SearchPlan | null>(replace<SearchPlan | null>(() => null)),
+  searchPlan: Annotation<SearchPlan | null, Partial<SearchPlan> | null>({
+    reducer: mergeSearchPlan,
+    default: () => null,
+  }),
   /** Present only for a structured form submission; chat continues through planners. */
   tripRequest: Annotation<TripRequest | null>(replace<TripRequest | null>(() => null)),
   locationResolutions: Annotation<LocationResolution[]>(replace<LocationResolution[]>(() => [])),
   searchAttempts: Annotation<SearchAttempt[]>(replace<SearchAttempt[]>(() => [])),
   positioningSearchComplete: Annotation<boolean>(replace<boolean>(() => false)),
   awardResults: Annotation<AwardOption[]>(replace<AwardOption[]>(() => [])),
+  searchStatus: Annotation<SearchStatus>(replace<SearchStatus>(() => "not_run")),
   tripSummaries: Annotation<TripSummary[]>(replace<TripSummary[]>(() => [])),
   recommendations: Annotation<FlightRecommendation[]>(replace<FlightRecommendation[]>(() => [])),
   kbDocs: Annotation<RetrievedDoc[]>(replace<RetrievedDoc[]>(() => [])),
@@ -121,3 +172,4 @@ export const AgentState = Annotation.Root({
 });
 
 export type AgentStateType = typeof AgentState.State;
+export type AgentStateUpdate = typeof AgentState.Update;

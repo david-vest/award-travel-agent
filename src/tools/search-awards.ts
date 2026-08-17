@@ -1,4 +1,5 @@
 import type { AvailabilityResult, CabinClass } from "./seats-aero/types";
+import { normalizeTaxes } from "./seats-aero/money";
 
 /** One bookable option: a single cabin on a single date via a single program. */
 export type AwardOption = {
@@ -9,6 +10,8 @@ export type AwardOption = {
   program: string;
   cabin: CabinClass;
   miles: number;
+  taxes?: number;
+  taxesCurrency?: string;
   direct: boolean;
   airlines: string;
   remainingSeats?: number;
@@ -56,6 +59,13 @@ export function normalizeResults(raw: AvailabilityResult[]): AwardOption[] {
         program: r.Source,
         cabin,
         miles,
+        taxes: normalizeTaxes(
+          r[`${prefix}TotalTaxes` as keyof AvailabilityResult] as
+            | number
+            | undefined,
+          r.TaxesCurrency,
+        ),
+        taxesCurrency: r.TaxesCurrency,
         direct: Boolean(r[`${prefix}Direct` as keyof AvailabilityResult]),
         // Economy/premium (Y/W) have no per-cabin airlines field on
         // AvailabilityResult, so they fall back to the record-level combined

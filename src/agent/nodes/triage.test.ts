@@ -7,7 +7,7 @@ vi.mock("../models", () => ({
 }));
 
 import { chat } from "../models";
-import { lastUserText, triage } from "./triage";
+import { lastUserText, triage, conversationContext, CONVERSATION_CONTEXT_MAX_TOKENS } from "./triage";
 
 const state = (messages: unknown[]): AgentStateType =>
   ({ messages }) as AgentStateType;
@@ -50,9 +50,60 @@ describe("triage", () => {
     vi.mocked(chat).mockReset();
   });
 
-  it("falls back to knowledge intent when the model call throws, rather than failing the turn", async () => {
+  it("falls back to route_search for an obvious flight request when the model call throws", async () => {
     mockTriageRejection(new Error("OutputParserException: no tool call"));
     const result = await triage(state([new HumanMessage("business class to Tokyo")]));
+    expect(result).toEqual({ intent: "route_search" });
+    expect(chat).toHaveBeenCalledWith({
+      model: "haiku",
+      effort: "low",
+      maxTokens: 256,
+      disableThinking: true,
+    });
+  });
+
+  it.each([
+    "Flights from the USA to Europe in business",
+    "USA -> EUR",
+    "California or New York to London or Paris",
+  ])("deterministically routes a published multi-city route: %s", async (text) => {
+    const result = await triage(state([new HumanMessage(text)]));
+    expect(result).toEqual({ intent: "route_search" });
+    expect(chat).not.toHaveBeenCalled();
+  });
+
+  it("keeps a pure knowledge fallback when no search signal is present", async () => {
+    mockTriageRejection(new Error("API down"));
+    const result = await triage(
+      state([new HumanMessage("Can Chase points transfer to Alaska?")]),
+    );
     expect(result).toEqual({ intent: "knowledge" });
+  });
+});
+
+describe("conversationContext", () => {
+  it("returns an empty string when there are no prior messages", async () => {
+    const s = state([new HumanMessage("first")]);
+    expect(await conversationContext(s)).toBe("");
+  });
+
+  it("includes prior turns within the token budget", async () => {
+    const s = state([
+      new HumanMessage("business class to Tokyo"),
+      new AIMessage("Here are a few options..."),
+      new HumanMessage("actually nonstop only"),
+    ]);
+    const ctx = await conversationContext(s);
+    expect(ctx).toContain("business class to Tokyo");
+    expect(ctx).toContain("Here are a few options");
+  });
+
+  it("drops the oldest turns once the token budget is exceeded", async () => {
+    const old = new HumanMessage("x".repeat(CONVERSATION_CONTEXT_MAX_TOKENS * 4 + 100));
+    const recent = new HumanMessage("recent question");
+    const s = state([old, recent, new HumanMessage("current turn")]);
+    const ctx = await conversationContext(s);
+    expect(ctx).toContain("recent question");
+    expect(ctx).not.toContain("xxxxxxxxxx");
   });
 });

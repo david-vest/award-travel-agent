@@ -92,8 +92,17 @@ describe("graph", () => {
 describe("graph traversal", () => {
   let visited: string[];
 
-  /** Records `name` into `visited` when called, then resolves with `ret`. */
-  function rec(name: string, ret: Partial<AgentStateType> = {}) {
+  /**
+   * Records `name` into `visited` when called, then resolves with `ret`.
+   * Generic (rather than a single shared `Partial<AgentStateType>` param
+   * type) because node return types aren't uniform: most nodes return
+   * `Partial<AgentStateType>`, but plan-search/plan-discovery return the
+   * narrower `AgentStateUpdate` (whose `searchPlan` no longer admits `null`
+   * now that guard.ts never emits it). Inferring `T` from each call's own
+   * literal keeps every call site checked against the mocked node's actual
+   * declared return type.
+   */
+  function rec<T extends object>(name: string, ret: T = {} as T) {
     return vi.fn(async () => {
       visited.push(name);
       return ret;

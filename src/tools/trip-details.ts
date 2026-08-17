@@ -2,6 +2,7 @@ import { z } from "zod";
 import { tool } from "@langchain/core/tools";
 import type { SeatsAeroClient } from "./seats-aero";
 import type { Trip } from "./seats-aero/types";
+import { normalizeTaxes } from "./seats-aero/money";
 
 export type TripSummary = {
   availabilityId: string;
@@ -20,19 +21,6 @@ export type TripSummary = {
   departsAt?: string;
   arrivesAt?: string;
 };
-
-function currencyFractionDigits(currency: string): number {
-  try {
-    return new Intl.NumberFormat("en-US", { style: "currency", currency }).resolvedOptions().maximumFractionDigits ?? 2;
-  } catch {
-    return 2;
-  }
-}
-
-/** Seats.aero sends tax totals in the currency's minor units (for example, 3800 USD cents). */
-export function minorUnitsToMajor(amount: number, currency = "USD"): number {
-  return amount / (10 ** currencyFractionDigits(currency));
-}
 
 function connectionDetails(trip: Trip): Array<{ airport: string; layoverMinutes?: number }> {
   const segments = trip.AvailabilitySegments ?? [];
@@ -74,7 +62,7 @@ export function summarizeTrip(trip: Trip, availabilityId: string): TripSummary {
     connections: connectionDetails(trip),
     cabin: trip.Cabin,
     miles: trip.MileageCost,
-    totalTaxes: trip.TotalTaxes == null ? undefined : minorUnitsToMajor(trip.TotalTaxes, trip.TaxesCurrency ?? "USD"),
+    totalTaxes: normalizeTaxes(trip.TotalTaxes, trip.TaxesCurrency),
     taxesCurrency: trip.TaxesCurrency,
     remainingSeats: trip.RemainingSeats,
     departsAt: trip.DepartsAt ?? segments[0]?.DepartsAt,

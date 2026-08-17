@@ -1,4 +1,5 @@
 import type { Region } from "../seats-aero/types";
+import { resolveSeatsAeroSearchCode } from "../seats-aero/multi-city-codes";
 import { AIRPORTS, CITY_ALIASES, MAJOR_HUBS, REGION_SYNONYMS } from "./data";
 
 export type ResolvedLocation =
@@ -47,6 +48,17 @@ export function resolveLocation(query: string): ResolvedLocation {
     return { kind: "unknown", query: raw };
   }
   const key = raw.toLowerCase();
+
+  // Provider-native multi-city codes must be recognized before bare IATA
+  // lookup. They are valid search values even though they are not airports.
+  const searchCode = resolveSeatsAeroSearchCode(raw);
+  if (searchCode) {
+    return {
+      kind: "airports",
+      iatas: [searchCode.code],
+      label: searchCode.label,
+    };
+  }
 
   // Bare IATA code
   if (/^[A-Za-z]{3}$/.test(raw)) {

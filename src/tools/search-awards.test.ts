@@ -30,6 +30,8 @@ const record: AvailabilityResult = {
   JRemainingSeats: 2,
   Airlines: "NH, AC",
   JAirlines: "NH",
+  TaxesCurrency: "USD",
+  JTotalTaxes: 11290,
   UpdatedAt: "2026-08-11T09:00:00Z",
 };
 
@@ -53,6 +55,20 @@ describe("normalizeResults", () => {
     const j = normalizeResults([record]).find((o) => o.cabin === "business");
     expect(j?.direct).toBe(true);
     expect(j?.airlines).toBe("NH");
+  });
+
+  it("normalizes the cabin tax total from provider minor units", () => {
+    const j = normalizeResults([record]).find((o) => o.cabin === "business");
+    expect(j?.taxes).toBe(112.9);
+    expect(j?.taxesCurrency).toBe("USD");
+  });
+
+  it("does not present a missing-tax zero sentinel as free", () => {
+    const missingTaxes = { ...record, JTotalTaxes: 0 };
+    const j = normalizeResults([missingTaxes]).find(
+      (o) => o.cabin === "business",
+    );
+    expect(j?.taxes).toBeUndefined();
   });
 
   it("preserves the availability id so refresh and trips can find it", () => {

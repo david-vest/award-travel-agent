@@ -30,8 +30,8 @@ function stateWith(text: string): AgentStateType {
 
 /** The channels every new turn must start clean on. */
 const SEARCH_RESET_FIELDS = {
-  searchPlan: null,
   awardResults: [],
+  searchStatus: "not_run",
   tripSummaries: [],
   recommendations: [],
   locationResolutions: [],
@@ -80,6 +80,12 @@ describe("guardInput", () => {
     expect(result).toMatchObject(RESET_FIELDS);
     expect(result.intent).toBeNull();
     expect(result.refusalReason).toBeNull();
+    expect(chat).toHaveBeenCalledWith({
+      model: "haiku",
+      effort: "low",
+      maxTokens: 256,
+      disableThinking: true,
+    });
   });
 
   it("resets all search-derived state when the model rejects the message", async () => {
@@ -122,5 +128,20 @@ describe("guardInput", () => {
     mockGuardResponse({ allowed: true, reason: "" });
     const result = await guardInput(stateWith("business class to Tokyo"));
     expect(result.revisionCount).toBe(0);
+  });
+
+  it("does not touch searchPlan, letting the checkpointer's prior value carry forward", async () => {
+    mockGuardResponse({ allowed: true, reason: "" });
+    const result = await guardInput(stateWith("only business or first"));
+    expect(result).not.toHaveProperty("searchPlan");
+  });
+
+  it("does not touch searchPlan even on the rejected path", async () => {
+    mockGuardResponse({
+      allowed: false,
+      reason: "I can only help with award travel.",
+    });
+    const result = await guardInput(stateWith("tell me a joke"));
+    expect(result).not.toHaveProperty("searchPlan");
   });
 });

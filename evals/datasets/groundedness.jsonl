@@ -1,0 +1,11 @@
+{"input": {"question": "Can I transfer Chase Ultimate Rewards points to Alaska Airlines?"}, "expected": {"mustMention": ["Alaska"], "shouldFindOptions": false}}
+{"input": {"question": "Do Amex Membership Rewards points transfer to Virgin Atlantic?"}, "expected": {"mustMention": ["Virgin Atlantic"], "shouldFindOptions": false}}
+{"input": {"question": "Does Avianca LifeMiles avoid fuel surcharges on Lufthansa business class awards?"}, "expected": {"mustMention": ["LifeMiles"], "shouldFindOptions": false}}
+{"input": {"question": "What's the cheapest way to fly business class to Europe using Aeroplan miles?"}, "expected": {"mustMention": ["Aeroplan"], "shouldFindOptions": false}}
+{"input": {"question": "Is Qatar Airways Qsuite business class worth booking with miles?"}, "expected": {"mustMention": ["Qatar"], "shouldFindOptions": false}}
+{"input": {"question": "What are the sweet spots for booking Turkish Airlines Miles&Smiles business class to Europe?"}, "expected": {"mustMention": ["Turkish"], "shouldFindOptions": false}}
+{"input": {"question": "Show me business and first class award seats from ORD to NRT in September 2026"}, "expected": {"mustMention": ["business"], "shouldFindOptions": true}}
+{"input": {"question": "What business or first class availability is there flying ORD to NRT sometime in September 2026?"}, "expected": {"mustMention": ["business"], "shouldFindOptions": true}}
+{"input": {"question": "What is the cheapest business or first class award from ORD to NRT in September 2026, and which program should I book with?"}, "expected": {"mustMention": ["business"], "shouldFindOptions": true}}
+{"input": {"question": "Nonstop first class from JFK to SYD in December 2026"}, "expected": {"mustMention": [], "shouldFindOptions": false}}
+{"input": {"question": "From Chicago, where should I take a weekend trip during the summer using points?"}, "expected": {"mustMention": [], "shouldFindOptions": false}}

@@ -14,8 +14,13 @@ import { mongoClient, DB_NAME } from "../../rag/store";
 import { probesFromPlan } from "./plan-discovery";
 import { AIRPORTS } from "../../tools/locations/data";
 import { MULTI_CITY_CODES, countryGroup, primaryGatewayMetro, regionGroup } from "../../tools/locations/multi-city-codes";
-import type { Region } from "../../tools/seats-aero/types";
+import { MILEAGE_PROGRAMS, type Region } from "../../tools/seats-aero/types";
+import {
+  resolveSeatsAeroSearchCode,
+  searchCodeForRegion,
+} from "../../tools/seats-aero/multi-city-codes";
 import type { AgentStateType, SearchAttempt, SearchPlan } from "../state";
+import { lastUserText } from "./triage";
 
 export const ENRICH_TOP_N = 5;
 export const MAX_ROUTE_SEARCH_CALLS = 4;
@@ -73,17 +78,44 @@ export async function getClient(
   return withTracing(withResponseCache(inner, cacheStore));
 }
 
-/**
- * Cheapest first, with a nonstop preference expressed as a mileage discount
- * rather than a hard sort key — so a nonstop wins a tie but not a 3x premium.
- */
-export function rankOptions(options: AwardOption[]): AwardOption[] {
-  const NONSTOP_BONUS = 0.9;
-  return [...options].sort(
-    (a, b) =>
-      a.miles * (a.direct ? NONSTOP_BONUS : 1) -
-      b.miles * (b.direct ? NONSTOP_BONUS : 1),
+/** Detects when fees, rather than mileage alone, are an explicit priority. */
+export function prefersLowTaxes(text: string): boolean {
+  return /\b(?:low(?:est)?|minimi[sz]e|avoid|reduce|cheap(?:est)?)(?:\s+\w+){0,2}\s+(?:tax(?:es)?|fees?|surcharges?)\b|\b(?:tax(?:es)?|fees?|surcharges?)\s+(?:are\s+)?(?:low(?:est)?|minimal|cheap(?:est)?)\b/i.test(
+    text,
   );
+}
+
+/**
+ * Cheapest mileage first by default, with a modest nonstop bonus. When the
+ * user explicitly prioritizes taxes, known tax totals come before unknown
+ * ones and lower totals sort first when they use the same currency. We do not
+ * compare unlike currencies without an exchange rate; mileage breaks those
+ * ties instead.
+ */
+export function rankOptions(
+  options: AwardOption[],
+  opts: { preferLowTaxes?: boolean } = {},
+): AwardOption[] {
+  const NONSTOP_BONUS = 0.9;
+  const mileageScore = (o: AwardOption) =>
+    o.miles * (o.direct ? NONSTOP_BONUS : 1);
+
+  return [...options].sort((a, b) => {
+    if (opts.preferLowTaxes) {
+      const aKnown = a.taxes !== undefined && Boolean(a.taxesCurrency);
+      const bKnown = b.taxes !== undefined && Boolean(b.taxesCurrency);
+      if (aKnown !== bKnown) return aKnown ? -1 : 1;
+      if (
+        aKnown &&
+        bKnown &&
+        a.taxesCurrency?.toUpperCase() === b.taxesCurrency?.toUpperCase() &&
+        a.taxes !== b.taxes
+      ) {
+        return (a.taxes as number) - (b.taxes as number);
+      }
+    }
+    return mileageScore(a) - mileageScore(b);
+  });
 }
 
 /**
@@ -120,8 +152,16 @@ export function filterByPointBalances(
  * resolved — this should not normally trigger.
  */
 export function regionForOrigin(iata: string | undefined): Region {
+  const searchCode = iata ? resolveSeatsAeroSearchCode(iata) : undefined;
+  if (searchCode) return searchCode.region;
   const found = iata ? AIRPORTS.find((a) => a.iata === iata) : undefined;
   return found ? found.region : "North America";
+}
+
+function supportedPrograms(programs: string[]): string[] {
+  return programs.filter((program) =>
+    (MILEAGE_PROGRAMS as readonly string[]).includes(program),
+  );
 }
 
 function attemptKey(origins: string[], destinations: string[]): string {
@@ -208,13 +248,16 @@ export function needsPositioningSearch(state: AgentStateType): boolean {
 }
 
 async function runRouteAttempt(client: SeatsAeroClient, plan: SearchPlan, attempt: RouteAttempt): Promise<AwardOption[]> {
+  const programs = supportedPrograms(plan.programs);
   const res = await client.search({
     origin_airport: attempt.origins.join(","),
     destination_airport: attempt.destinations.join(","),
     start_date: plan.startDate,
     end_date: plan.endDate,
     cabins: plan.cabins.join(","),
-    sources: plan.programs.length > 0 ? plan.programs.join(",") : undefined,
+    // Empty means comprehensive. A non-empty list is an explicit user
+    // constraint, not a planner guess (see PLAN_SEARCH_PROMPT).
+    sources: programs.length > 0 ? programs.join(",") : undefined,
     only_direct_flights: plan.nonstopOnly || undefined,
     max_fees: plan.maxTaxesFeesUsd != null ? Math.round(plan.maxTaxesFeesUsd * 100) : undefined,
     take: 500,
@@ -239,22 +282,43 @@ function dedupeOptions(options: AwardOption[]): AwardOption[] {
   return [...byOption.values()];
 }
 
+/**
+ * A route plan normally has concrete destination codes. A broad region is
+ * also searchable when seats.aero publishes a provider-native multi-city
+ * code (for example Europe -> EUR). Keeping this fallback here makes older
+ * checkpointed plans usable even if they were created before planSearch
+ * started materializing that code in `destinations`.
+ */
+export function destinationsForSearch(
+  destinations: string[],
+  destinationRegion?: string,
+): string[] {
+  if (destinations.length > 0) return destinations;
+  const code = searchCodeForRegion(destinationRegion);
+  return code ? [code] : [];
+}
+
 export async function searchAwards(
   state: AgentStateType,
 ): Promise<Partial<AgentStateType>> {
   const plan = state.searchPlan;
-  if (!plan) return { awardResults: [] };
+  if (!plan) return { awardResults: [], searchStatus: "not_run" };
 
   const client = await getClient();
   const collected: AwardOption[] = [];
 
   if (state.intent === "discovery") {
     if (plan.origins.length === 0) {
-      return { awardResults: [] };
+      return { awardResults: [], searchStatus: "not_run" };
+    }
+    const probes = probesFromPlan(plan);
+    if (probes.length === 0) {
+      return { awardResults: [], searchStatus: "not_run" };
     }
     const originRegion = regionForOrigin(plan.origins[0]);
+    let successfulCalls = 0;
     // One call per probe — regional availability covers one program each.
-    for (const probe of probesFromPlan(plan)) {
+    for (const probe of probes) {
       try {
         const res = await client.regionalAvailability({
           source: probe.program as never,
@@ -266,6 +330,7 @@ export async function searchAwards(
           max_fees: plan.maxTaxesFeesUsd != null ? Math.round(plan.maxTaxesFeesUsd * 100) : undefined,
           take: 1000,
         });
+        successfulCalls++;
         // Regional results cover a whole region; keep only our actual origins.
         const fromOurOrigins = res.data.filter((r) =>
           plan.origins.includes(r.Route.OriginAirport),
@@ -280,20 +345,29 @@ export async function searchAwards(
         continue;
       }
     }
-  } else {
-    if (plan.origins.length === 0 || plan.destinations.length === 0) {
-      return { awardResults: [] };
-    }
-    const exact: RouteAttempt = { tier: "exact", origins: plan.origins, destinations: plan.destinations, reason: "Exact requested route." };
-    try { collected.push(...await runRouteAttempt(client, plan, exact)); } catch { /* A failed exact call still allows the bounded fallback ladder. */ }
     return {
-      awardResults: rankOptions(collected),
-      searchAttempts: [{ ...exact, resultCount: collected.length }],
-      positioningSearchComplete: false,
+      awardResults: rankOptions(collected, { preferLowTaxes: prefersLowTaxes(lastUserText(state)) }),
+      searchStatus: successfulCalls > 0 ? "searched" : "provider_error",
+      positioningSearchComplete: true,
     };
   }
 
-  return { awardResults: rankOptions(collected), positioningSearchComplete: true };
+  const destinations = destinationsForSearch(plan.destinations, plan.destinationRegion);
+  if (plan.origins.length === 0 || destinations.length === 0) {
+    return { awardResults: [], searchStatus: "not_run" };
+  }
+  const exact: RouteAttempt = { tier: "exact", origins: plan.origins, destinations, reason: "Exact requested route." };
+  let exactSucceeded = false;
+  try {
+    collected.push(...await runRouteAttempt(client, plan, exact));
+    exactSucceeded = true;
+  } catch { /* A failed exact call still allows the bounded fallback ladder. */ }
+  return {
+    awardResults: rankOptions(collected, { preferLowTaxes: prefersLowTaxes(lastUserText(state)) }),
+    searchAttempts: [{ ...exact, resultCount: collected.length }],
+    searchStatus: exactSucceeded ? "searched" : "provider_error",
+    positioningSearchComplete: false,
+  };
 }
 
 /** Runs search calls 2–4 only after exact results fail the quality gate. */
@@ -306,10 +380,14 @@ export async function searchPositioningOptions(state: AgentStateType): Promise<P
   const remainingBudget = Math.max(0, MAX_ROUTE_SEARCH_CALLS - priorAttempts.length);
   const collected: AwardOption[] = [];
   const completed: SearchAttempt[] = [];
+  let anySucceeded = false;
 
   for (const attempt of attempts.slice(0, remainingBudget)) {
     let options: AwardOption[] = [];
-    try { options = await runRouteAttempt(client, plan, attempt); } catch { options = []; }
+    try {
+      options = await runRouteAttempt(client, plan, attempt);
+      anySucceeded = true;
+    } catch { options = []; }
     collected.push(...options);
     completed.push({ ...attempt, resultCount: options.length });
     if (options.filter((option) => reasonableOption(option, plan)).length >= 3) break;
@@ -318,6 +396,8 @@ export async function searchPositioningOptions(state: AgentStateType): Promise<P
   return {
     awardResults: rankOptions(dedupeOptions([...(state.awardResults ?? []), ...collected])),
     searchAttempts: [...priorAttempts, ...completed],
+    // A failed exact call followed by a successful positioning attempt still counts as "searched".
+    searchStatus: anySucceeded ? "searched" : state.searchStatus,
     positioningSearchComplete: true,
   };
 }
