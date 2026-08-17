@@ -221,6 +221,21 @@ describe("planDiscovery place resolution", () => {
     expect(resolveLocation).not.toHaveBeenCalled();
   });
 
+  it("recovers a published origin when the discovery model omits it", async () => {
+    mockPlannerResponse({
+      probes: [
+        { program: "aeroplan", destinationRegion: "Europe", cabin: "business" },
+      ],
+    });
+
+    const result = await planDiscovery(
+      stateWith("Flights from the USA to Europe in business"),
+    );
+
+    expect(planOf(result)?.origins).toEqual(["USA"]);
+    expect(resolveLocation).not.toHaveBeenCalled();
+  });
+
   it("omits destinations so a prior route-search's destination survives the reducer merge", async () => {
     mockPlannerResponse({
       origin: "Chicago",

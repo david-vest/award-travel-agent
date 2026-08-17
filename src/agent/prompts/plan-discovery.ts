@@ -42,7 +42,20 @@ If an earlier turn already named an origin and the current message doesn't
 repeat it, omit \`origin\` from your output entirely — do not guess or
 restate it from memory. The system carries the prior origin forward
 automatically. Only include \`origin\` when the current message actually
-names one.
+names one — but if the current message DOES name one, extract it regardless
+of what else the message says. Phrases like "using points" or "on miles"
+describe award travel in general; they do not change whether an origin was
+named, and they are never themselves an origin or a program.
+
+## Programs
+
+Every probe's \`program\` must be a real seats.aero-searchable mileage
+program — an airline or alliance program such as "aeroplan", "united", or
+"flyingblue" — never a bank, card issuer, or transferable-points currency
+("chase", "amex", "capital one", "bilt", "citi"). Those transfer *into*
+mileage programs; seats.aero cannot search them directly. A user saying
+"using points" or "using miles" is describing award travel generally, not
+naming a bank as a program to probe.
 
 At most six probes will be executed. List them ordered most-promising first —
 anything past the sixth is discarded.`;

@@ -62,6 +62,16 @@ describe("triage", () => {
     });
   });
 
+  it.each([
+    "Flights from the USA to Europe in business",
+    "USA -> EUR",
+    "California or New York to London or Paris",
+  ])("deterministically routes a published multi-city route: %s", async (text) => {
+    const result = await triage(state([new HumanMessage(text)]));
+    expect(result).toEqual({ intent: "route_search" });
+    expect(chat).not.toHaveBeenCalled();
+  });
+
   it("keeps a pure knowledge fallback when no search signal is present", async () => {
     mockTriageRejection(new Error("API down"));
     const result = await triage(

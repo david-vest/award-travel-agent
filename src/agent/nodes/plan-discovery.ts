@@ -4,6 +4,7 @@ import { chat } from "../models";
 import { plainSystem } from "../cache";
 import { DISCOVERY_PROMPT } from "../prompts/plan-discovery";
 import { resolveLocation } from "../../tools/locations/resolve";
+import { inferMultiCityOrigins } from "../../tools/seats-aero/multi-city-codes";
 import { REGIONS } from "../../tools/seats-aero/types";
 import type { AgentStateType, AgentStateUpdate, DiscoveryProbe, SearchPlan } from "../state";
 import { lastUserText, conversationContext } from "./triage";
@@ -136,6 +137,12 @@ export async function planDiscovery(state: AgentStateType): Promise<AgentStateUp
       origins = [];
       ambiguousPlaces = [{ query: origin.query, candidates: origin.candidates }];
     }
+  } else {
+    // A discovery-plan model can omit an origin even when the text names a
+    // published group. Recover it directly so a mistaken upstream route into
+    // this branch still searches rather than returning `origins: []`.
+    const inferredOrigins = inferMultiCityOrigins(lastUserText(state));
+    if (inferredOrigins.length > 0) origins = inferredOrigins;
   }
 
   // Discovery reuses SearchPlan so downstream nodes see one shape.

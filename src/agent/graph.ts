@@ -40,7 +40,10 @@ export function buildGraphWithoutCheckpointer() {
     .addNode("guard_input", guardInput)
     .addNode("refuse", refuse)
     .addNode("triage", triage)
-    .addNode("plan_search", planSearch)
+    // Wrapped: planSearch's optional `now` param (added so evals can pin the
+    // clock) structurally conflicts with LangGraph's NodeAction signature at
+    // the type level, even though the graph always calls with one argument.
+    .addNode("plan_search", (state: AgentStateType) => planSearch(state))
     .addNode("plan_discovery", planDiscovery)
     .addNode("search_awards", searchAwards)
     .addNode("enrich_trips", enrichTrips)
@@ -96,7 +99,10 @@ export async function buildGraph() {
     .addNode("guard_input", guardInput)
     .addNode("refuse", refuse)
     .addNode("triage", triage)
-    .addNode("plan_search", planSearch)
+    // Wrapped: planSearch's optional `now` param (added so evals can pin the
+    // clock) structurally conflicts with LangGraph's NodeAction signature at
+    // the type level, even though the graph always calls with one argument.
+    .addNode("plan_search", (state: AgentStateType) => planSearch(state))
     .addNode("plan_discovery", planDiscovery)
     .addNode("search_awards", searchAwards)
     .addNode("enrich_trips", enrichTrips)

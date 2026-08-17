@@ -150,5 +150,26 @@
     "endpoint": "/trips/32aGm6JT7gwl5iXf549ah4HQI3Y",
     "params": {},
     "recordedAt": "2026-08-13T16:15:07.969Z"
+  },
+
+  "_comment_take_order_by_aliases": "The three entries below are byte-identical copies of already-recorded fixtures above, saved under the hash the app's ACTUAL runtime request produces. search.ts's searchAwards()/refresh.ts's refetch() always add take:500 and order_by:'lowest_mileage' to every /search call (take:1000 for /availability), but scripts/record-fixtures.ts's RECORDINGS list omitted both when it captured the originals above -- so requestKey() hashes to a different filename than any real graph run ever requests, and every route_search/discovery call 404s in replay mode regardless of dataset accuracy (evals/datasets/groundedness.jsonl's shouldFindOptions:true cases depend on this fix). Content is unchanged from the source fixture (verified below to have hasMore:false, i.e. take:500/1000 would not have truncated it); only the address changes. See evals/.superpowers task-7.4-report.md for how this was found.",
+
+  "80613bc668106fad1a5a14c3e196e264.json": {
+    "endpoint": "/search",
+    "params": { "origin_airport": "ORD", "destination_airport": "NRT", "cabins": "business,first", "start_date": "2026-09-01", "end_date": "2026-09-30", "take": 500, "order_by": "lowest_mileage" },
+    "aliasOf": "6fcd785b547288eceecfc18c32be9733.json",
+    "recordedAt": "2026-08-16T00:00:00.000Z"
+  },
+  "91cb0b9d56e7e451f5c91a8f6fc5172a.json": {
+    "endpoint": "/availability",
+    "params": { "source": "aeroplan", "origin_region": "North America", "destination_region": "Europe", "cabin": "business", "start_date": "2026-09-01", "end_date": "2026-09-30", "take": 1000 },
+    "aliasOf": "d06c5560d3cfc0c4a92ed153f19250f0.json",
+    "recordedAt": "2026-08-16T00:00:00.000Z"
+  },
+  "87322c5b8d00c049f8eb243553e1c316.json": {
+    "endpoint": "/availability",
+    "params": { "source": "united", "origin_region": "North America", "destination_region": "Asia", "cabin": "business", "start_date": "2026-09-01", "end_date": "2026-09-30", "take": 1000 },
+    "aliasOf": "648ce610dba0435ca8ae3ef4847c1e52.json",
+    "recordedAt": "2026-08-16T00:00:00.000Z"
   }
 }

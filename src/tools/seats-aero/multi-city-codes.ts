@@ -133,6 +133,42 @@ export function searchCodesMentioned(value: string): SeatsAeroSearchCode[] {
   return selected.sort((a, b) => a.start - b.start).map((match) => match.code);
 }
 
+const ROUTE_SEPARATOR = String.raw`(?:\bto\b|\binto\b|->|→)`;
+
+/**
+ * Extracts provider-native endpoints from an explicit route expression. This
+ * deliberately recognizes only catalog-backed names/codes; ordinary place
+ * parsing remains the planner's job.
+ */
+export function inferMultiCityRoute(text: string): {
+  origins: SeatsAeroSearchCode[];
+  destinations: SeatsAeroSearchCode[];
+} {
+  const fromTo = new RegExp(
+    String.raw`\bfrom\b([\s\S]+?)${ROUTE_SEPARATOR}([\s\S]+)`,
+    "i",
+  ).exec(text);
+  const bareTo = new RegExp(
+    String.raw`^([\s\S]+?)${ROUTE_SEPARATOR}([\s\S]+)`,
+    "i",
+  ).exec(text);
+  const match = fromTo ?? bareTo;
+  if (!match) return { origins: [], destinations: [] };
+  return {
+    origins: searchCodesMentioned(match[1]),
+    destinations: searchCodesMentioned(match[2]),
+  };
+}
+
+/** Recovers one or more published origin groups from discovery phrasing. */
+export function inferMultiCityOrigins(text: string): SeatsAeroSearchCode[] {
+  const route = inferMultiCityRoute(text);
+  if (route.origins.length > 0) return route.origins;
+
+  const from = /\b(?:from|out of|departing)\b([\s\S]+)/i.exec(text);
+  return from ? searchCodesMentioned(from[1]) : [];
+}
+
 /** Returns a broad provider-native code only where the published scope matches. */
 export function searchCodeForRegion(
   region: string | undefined,

@@ -4,8 +4,8 @@ import { cachedSystem } from "../cache";
 import { PLAN_SEARCH_PROMPT } from "../prompts/plan-search";
 import { resolveLocation } from "../../tools/locations/resolve";
 import {
+  inferMultiCityRoute,
   searchCodeForRegion,
-  searchCodesMentioned,
 } from "../../tools/seats-aero/multi-city-codes";
 import { MILEAGE_PROGRAMS, REGIONS } from "../../tools/seats-aero/types";
 import type { AgentStateType, AgentStateUpdate, SearchPlan } from "../state";
@@ -85,33 +85,16 @@ export function buildPlannerContext(
   return lines.join("\n");
 }
 
-/**
- * Deterministic safety net for provider-native endpoints. The planner still
- * handles normal language and dates, but a transient empty structured output
- * must not erase an explicit "USA to Europe" (or multi-code) route.
- */
-export function inferMultiCityRoute(text: string): {
-  origins: string[];
-  destinations: string[];
-} {
-  const fromTo = /\bfrom\b([\s\S]+?)\bto\b([\s\S]+)/i.exec(text);
-  const bareTo = /^([\s\S]+?)\bto\b([\s\S]+)/i.exec(text);
-  const match = fromTo ?? bareTo;
-  if (!match) return { origins: [], destinations: [] };
-  return {
-    origins: searchCodesMentioned(match[1]),
-    destinations: searchCodesMentioned(match[2]),
-  };
-}
-
-export async function planSearch(state: AgentStateType): Promise<AgentStateUpdate> {
+export async function planSearch(
+  state: AgentStateType,
+  now: Date = new Date(),
+): Promise<AgentStateUpdate> {
   const model = chat({
     effort: "low",
     maxTokens: 1_200,
     disableThinking: true,
   }).withStructuredOutput(searchPlanSchema, { name: "search_plan" });
 
-  const now = new Date();
   const priorContext = await conversationContext(state);
   const userText = lastUserText(state);
   const plannerContext = buildPlannerContext(userText, now, priorContext);

@@ -16,10 +16,10 @@ import { chat } from "../models";
 import { resolveLocation } from "../../tools/locations/resolve";
 import {
   buildPlannerContext,
-  inferMultiCityRoute,
   searchPlanSchema,
   planSearch,
 } from "./plan-search";
+import { inferMultiCityRoute } from "../../tools/seats-aero/multi-city-codes";
 
 /** Wires `chat(...).withStructuredOutput(...).invoke(...)` to resolve with `result`. */
 function mockPlannerResponse(result: unknown) {

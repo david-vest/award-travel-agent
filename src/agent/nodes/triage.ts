@@ -4,6 +4,7 @@ import { chat } from "../models";
 import { estimateTokens } from "../cache";
 import { plainSystem } from "../cache";
 import { TRIAGE_PROMPT } from "../prompts/triage";
+import { inferMultiCityRoute } from "../../tools/seats-aero/multi-city-codes";
 import type { AgentStateType, Intent } from "../state";
 
 export const triageSchema = z.object({
@@ -79,6 +80,18 @@ export async function triage(
   state: AgentStateType,
 ): Promise<Partial<AgentStateType>> {
   const text = lastUserText(state);
+
+  // Published multi-city groups on both sides are already a complete route.
+  // Do this before the classifier: the LangSmith regression returned a valid
+  // but wrong `discovery` label, so catch-only heuristics could never repair it.
+  const explicitMultiCityRoute = inferMultiCityRoute(text);
+  if (
+    explicitMultiCityRoute.origins.length > 0 &&
+    explicitMultiCityRoute.destinations.length > 0
+  ) {
+    return { intent: "route_search" };
+  }
+
   const context = await conversationContext(state);
 
   const model = chat({

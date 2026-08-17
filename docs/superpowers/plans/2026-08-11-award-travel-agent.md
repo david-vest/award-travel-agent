@@ -3517,7 +3517,7 @@ git commit -m "feat(rag): add metadata-prefiltered retriever with result-aware q
   - `const AgentState = Annotation.Root({...})`
   - `type AgentStateType = typeof AgentState.State`
   - `type Intent = "route_search" | "discovery" | "knowledge" | "rejected"`
-  - `type SearchPlan`, `type Violation`
+  - `type SearchPlan`, `type Violation`, `type DiscoveryProbe`
 
 - [ ] **Step 1: Write the failing test**
 
@@ -3578,6 +3578,17 @@ import type { RetrievedDoc } from "../rag/retriever";
 
 export type Intent = "route_search" | "discovery" | "knowledge" | "rejected";
 
+/**
+ * One program+region+cabin combination the discovery planner decided is worth
+ * checking. Defined here, not in Task 4.5's own file, because SearchPlan
+ * below needs to carry a real list of these verbatim — see `discoveryProbes`.
+ */
+export type DiscoveryProbe = {
+  program: string;
+  destinationRegion: string;
+  cabin: string;
+};
+
 /** The structured plan a planner node produces. Data, not an action. */
 export type SearchPlan = {
   origins: string[];
@@ -3590,6 +3601,28 @@ export type SearchPlan = {
   programs: string[];
   /** Free-text note explaining choices, surfaced in traces and evals. */
   rationale?: string;
+  /**
+   * Place names Task 4.4's planner named that resolveLocation could not match
+   * at all. Surfaced so synthesize (Task 4.7) can tell the user "I didn't
+   * recognize X" instead of the search silently coming back empty.
+   */
+  unresolvedPlaces?: string[];
+  /**
+   * Place names that matched more than one real city (e.g. "San" matching San
+   * Francisco/Diego/Jose) and were deliberately left unresolved rather than
+   * guessed. Surfaced so synthesize can ask which one was meant.
+   */
+  ambiguousPlaces?: { query: string; candidates: string[] }[];
+  /**
+   * The discovery planner's actual ordered, budget-capped probe list — each
+   * entry can name a DIFFERENT region, unlike the flattened `programs`/
+   * `cabins`/`destinationRegion` fields above, which only summarize what's
+   * here for display purposes. Task 4.6's search node reads this directly
+   * (via Task 4.5's `probesFromPlan`); do not try to reconstruct probes from
+   * the flattened fields — a cartesian product of programs x cabins sharing
+   * one region is not the same set of probes the model actually chose.
+   */
+  discoveryProbes?: DiscoveryProbe[];
 };
 
 export type Violation = {
@@ -4199,6 +4232,34 @@ describe("searchPlanSchema", () => {
 });
 ```
 
+Also add cases exercising `planSearch` itself (not just the schema) against a stubbed `resolveLocation` — mock `../../tools/locations/resolve` so the test doesn't depend on the real airport dataset:
+
+```ts
+// (same file, additional describe block)
+import { planSearch } from "./plan-search";
+import { HumanMessage } from "@langchain/core/messages";
+import { vi } from "vitest";
+
+vi.mock("../../tools/locations/resolve", () => ({
+  resolveLocation: vi.fn(),
+}));
+
+describe("planSearch place resolution", () => {
+  it("carries an unresolved place name onto the plan instead of dropping it", async () => {
+    // Arrange resolveLocation to return `unknown` for one destination name and
+    // stub the model call — see Task 4.4's implementer notes on mocking `chat`.
+    // Assert plan.unresolvedPlaces contains that name.
+  });
+
+  it("carries an ambiguous match's candidates onto the plan instead of dropping it", async () => {
+    // Arrange resolveLocation to return `ambiguous` for one origin name.
+    // Assert plan.ambiguousPlaces contains { query, candidates }.
+  });
+});
+```
+
+(These two are sketched, not literal — the implementer should flesh out the model-call mock following whatever pattern the codebase already uses elsewhere for `chat(...).withStructuredOutput(...)`, and should feel free to test `expand()` directly instead if that's cleaner than mocking `planSearch`'s full model round trip. The point is real coverage that `unresolvedPlaces`/`ambiguousPlaces` actually reach the plan, not just that `expand()`'s return shape looks right in isolation.)
+
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run src/agent/nodes/plan-search.test.ts`
@@ -4288,12 +4349,16 @@ export async function planSearch(
 
   // Expand place names deterministically. The model names places; the lookup
   // table produces codes, so a hallucinated airport cannot reach the API.
-  const origins = expand(raw.origins);
-  const destinations = expand(raw.destinations);
+  // Unresolved and ambiguous names are collected rather than silently
+  // dropped — synthesize (Task 4.7) tells the user about them.
+  const originsResult = expand(raw.origins);
+  const destinationsResult = expand(raw.destinations);
+  const unresolvedPlaces = [...originsResult.unresolved, ...destinationsResult.unresolved];
+  const ambiguousPlaces = [...originsResult.ambiguous, ...destinationsResult.ambiguous];
 
   const plan: SearchPlan = {
-    origins,
-    destinations,
+    origins: originsResult.codes,
+    destinations: destinationsResult.codes,
     destinationRegion: raw.destinationRegion,
     startDate: raw.startDate,
     endDate: raw.endDate,
@@ -4301,27 +4366,40 @@ export async function planSearch(
     nonstopOnly: raw.nonstopOnly,
     programs: raw.programs,
     rationale: raw.rationale,
+    unresolvedPlaces: unresolvedPlaces.length > 0 ? unresolvedPlaces : undefined,
+    ambiguousPlaces: ambiguousPlaces.length > 0 ? ambiguousPlaces : undefined,
   };
 
   return { searchPlan: plan };
 }
 
-function expand(names: string[]): string[] {
-  const out = new Set<string>();
+type ExpansionResult = {
+  codes: string[];
+  unresolved: string[];
+  ambiguous: { query: string; candidates: string[] }[];
+};
+
+function expand(names: string[]): ExpansionResult {
+  const codes = new Set<string>();
+  const unresolved: string[] = [];
+  const ambiguous: { query: string; candidates: string[] }[] = [];
+
   for (const name of names) {
     const r = resolveLocation(name);
-    if (r.kind === "airports") r.iatas.forEach((i) => out.add(i));
-    else if (r.kind === "region") r.representativeIatas.forEach((i) => out.add(i));
-    // "unknown" contributes nothing — better an empty search than a fake code.
+    if (r.kind === "airports") r.iatas.forEach((i) => codes.add(i));
+    else if (r.kind === "region") r.representativeIatas.forEach((i) => codes.add(i));
+    else if (r.kind === "ambiguous") ambiguous.push({ query: r.query, candidates: r.candidates });
+    else unresolved.push(r.query); // kind === "unknown"
   }
-  return [...out];
+
+  return { codes: [...codes], unresolved, ambiguous };
 }
 ```
 
 - [ ] **Step 5: Run tests to verify they pass**
 
 Run: `npx vitest run src/agent/nodes/plan-search.test.ts`
-Expected: PASS (8 tests). If the prompt-length test fails, the prompt needs more worked examples — that is the intended fix, not lowering the threshold.
+Expected: PASS (8 tests plus whatever the implementer wrote for the two sketched `planSearch place resolution` cases). If the prompt-length test fails, the prompt needs more worked examples — that is the intended fix, not lowering the threshold.
 
 - [ ] **Step 6: Verify caching actually engages**
 
@@ -4358,15 +4436,17 @@ git commit -m "feat(agent): add cached search planner with deterministic locatio
 - Test: `src/agent/nodes/plan-discovery.test.ts`
 
 **Interfaces:**
-- Consumes: `chat`, `plainSystem`, `resolveLocation`, `SearchPlan`
+- Consumes: `chat`, `plainSystem`, `resolveLocation`, `SearchPlan`, `DiscoveryProbe` from `../state`
 - Produces:
   - `const DISCOVERY_BUDGET = 6`
   - `const discoveryPlanSchema` (Zod)
   - `function capProbes<T>(probes: T[], budget?: number): T[]`
   - `async function planDiscovery(state): Promise<Partial<AgentStateType>>`
-  - `type DiscoveryProbe = { program: string; destinationRegion: string; cabin: string }`
+  - `function probesFromPlan(plan: SearchPlan): DiscoveryProbe[]`
 
 **Design note:** discovery produces a list of *probes* — one program plus one region each — because regional availability covers a single program per call. The budget cap is enforced in code, not asked of the model: a prompt saying "at most 6" is a suggestion, `slice(0, 6)` is a guarantee, and this is the node standing between a vague question and a 1,000-call daily quota.
+
+**A correction made before implementation:** an earlier draft of this task flattened the model's chosen probes down into `SearchPlan`'s summary fields (`programs`, `cabins`, a single `destinationRegion`) and then tried to *reconstruct* the probe list from those fields via a cartesian product of programs × cabins, all sharing whichever region happened to survive the flattening. That reconstruction is not the same set of probes the model actually chose — if the model picked (aeroplan, Europe, business), (alaska, Asia, business), (turkish, Africa, economy), the flattened-and-rebuilt version would search all three program/cabin combinations against a single region, silently dropping two of the three actual regions and querying a region nothing asked about. `SearchPlan.discoveryProbes` (Task 4.1) exists specifically to carry the real, ordered, already-capped probe list verbatim so this node's `probesFromPlan` can simply read it back rather than guess at it.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -4415,7 +4495,43 @@ describe("discoveryPlanSchema", () => {
     expect(p.probes).toHaveLength(1);
   });
 });
+
+describe("probesFromPlan", () => {
+  it("returns the plan's real discoveryProbes verbatim, not a reconstruction", () => {
+    // Three probes spanning three DIFFERENT regions — the bug this guards
+    // against is a cartesian-product rebuild that would collapse them all
+    // onto one region. If discoveryProbes round-trips correctly, each
+    // probe's own destinationRegion survives.
+    const probes: DiscoveryProbe[] = [
+      { program: "aeroplan", destinationRegion: "Europe", cabin: "business" },
+      { program: "alaska", destinationRegion: "Asia", cabin: "business" },
+      { program: "turkish", destinationRegion: "Africa", cabin: "economy" },
+    ];
+    const plan: SearchPlan = {
+      origins: ["ORD"],
+      destinations: [],
+      cabins: ["business", "economy"],
+      nonstopOnly: false,
+      programs: ["aeroplan", "alaska", "turkish"],
+      discoveryProbes: probes,
+    };
+    expect(probesFromPlan(plan)).toEqual(probes);
+  });
+
+  it("returns an empty list when the plan has no discoveryProbes", () => {
+    const plan: SearchPlan = {
+      origins: ["ORD"],
+      destinations: [],
+      cabins: [],
+      nonstopOnly: false,
+      programs: [],
+    };
+    expect(probesFromPlan(plan)).toEqual([]);
+  });
+});
 ```
+
+(Import `probesFromPlan`, `DiscoveryProbe`, and `SearchPlan` alongside the other imports at the top of this test file — `DiscoveryProbe`/`SearchPlan` come from `../state`.)
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -4442,19 +4558,13 @@ import { plainSystem } from "../cache";
 import { DISCOVERY_PROMPT } from "../prompts/plan-discovery";
 import { resolveLocation } from "../../tools/locations/resolve";
 import { REGIONS } from "../../tools/seats-aero/types";
-import type { AgentStateType, SearchPlan } from "../state";
+import type { AgentStateType, DiscoveryProbe, SearchPlan } from "../state";
 import { lastUserText } from "./triage";
 
 /** Hard cap on tool calls for one open-ended question. Protects daily quota. */
 export const DISCOVERY_BUDGET = 6;
 
 const DEFAULT_WINDOW_DAYS = 90;
-
-export type DiscoveryProbe = {
-  program: string;
-  destinationRegion: string;
-  cabin: string;
-};
 
 export const discoveryPlanSchema = z.object({
   origin: z.string().min(1).describe("Origin city or airport the user named"),
@@ -4519,8 +4629,11 @@ export async function planDiscovery(
         ? origin.representativeIatas
         : [];
 
-  // Discovery reuses SearchPlan so downstream nodes see one shape. The probes
-  // are carried in the fields the search node reads.
+  // Discovery reuses SearchPlan so downstream nodes see one shape.
+  // `discoveryProbes` carries the real, ordered probe list verbatim; the
+  // flattened programs/cabins/destinationRegion fields below are a summary
+  // for display and logging only — search_awards (Task 4.6) must read
+  // discoveryProbes via probesFromPlan, never reconstruct probes from them.
   const plan: SearchPlan = {
     origins,
     destinations: [],
@@ -4531,31 +4644,27 @@ export async function planDiscovery(
     nonstopOnly: false,
     programs: [...new Set(probes.map((p) => p.program))],
     rationale: raw.rationale,
+    discoveryProbes: probes,
   };
 
   return { searchPlan: plan };
 }
 
-/** Rebuild the probe list from a plan, for the search node. */
+/**
+ * Returns the plan's real probe list. This is a plain accessor, not a
+ * reconstruction — the probes were already chosen by the model and capped
+ * once, in planDiscovery, and are carried on the plan verbatim precisely so
+ * this function doesn't have to guess at them from flattened summary fields.
+ */
 export function probesFromPlan(plan: SearchPlan): DiscoveryProbe[] {
-  const probes: DiscoveryProbe[] = [];
-  for (const program of plan.programs) {
-    for (const cabin of plan.cabins) {
-      probes.push({
-        program,
-        destinationRegion: plan.destinationRegion ?? "Europe",
-        cabin,
-      });
-    }
-  }
-  return capProbes(probes);
+  return capProbes(plan.discoveryProbes ?? []);
 }
 ```
 
 - [ ] **Step 5: Run tests to verify they pass**
 
 Run: `npx vitest run src/agent/nodes/plan-discovery.test.ts`
-Expected: PASS (7 tests).
+Expected: PASS (9 tests).
 
 - [ ] **Step 6: Commit**
 
@@ -5103,6 +5212,36 @@ describe("buildSynthesisContext", () => {
   it("includes data freshness so the answer can label it", () => {
     expect(buildSynthesisContext(state())).toContain("2026-08-11T09:00:00Z");
   });
+
+  it("surfaces an unresolved place name rather than silently searching without it", () => {
+    const s = state({
+      searchPlan: {
+        origins: ["ORD"],
+        destinations: [],
+        cabins: [],
+        nonstopOnly: false,
+        programs: [],
+        unresolvedPlaces: ["Wakanda"],
+      } as never,
+    });
+    expect(buildSynthesisContext(s)).toContain("Wakanda");
+  });
+
+  it("surfaces an ambiguous place's candidates so the model can ask which was meant", () => {
+    const s = state({
+      searchPlan: {
+        origins: ["ORD"],
+        destinations: [],
+        cabins: [],
+        nonstopOnly: false,
+        programs: [],
+        ambiguousPlaces: [{ query: "San", candidates: ["San Francisco", "San Diego"] }],
+      } as never,
+    });
+    const ctx = buildSynthesisContext(s);
+    expect(ctx).toContain("San Francisco");
+    expect(ctx).toContain("San Diego");
+  });
 });
 
 describe("SYNTHESIZE_PROMPT", () => {
@@ -5128,6 +5267,7 @@ Expected: FAIL — cannot resolve the modules.
 Write `src/agent/prompts/synthesize.ts` exporting `SYNTHESIZE_PROMPT`, over 1024 estimated tokens, with no volatile values. It must cover:
 
 - **The grounding contract, stated first and unambiguously:** every flight number, mileage figure, date, airline, and price must come from the supplied tool results. Never estimate, never round to a "typical" figure, never fill a gap from background knowledge. If the data does not support a claim, say so instead.
+- **Location resolution notes, when present:** if the context includes a note about a place name that wasn't recognized or matched multiple cities, mention it plainly to the user (e.g. "I didn't recognize 'Wakanda'" or "did you mean San Francisco or San Diego?") rather than silently proceeding as if the search covered every place they asked about.
 - **Citation rules:** claims drawn from knowledge documents cite the document id inline as `[id]`. Product opinions must be attributed and carry their freshness date, because they are editorial rather than factual.
 - **Freshness:** state when the availability data was last updated, and never imply a seat is confirmed bookable.
 - **Answer shape:** lead with the direct answer, then the two or three best options with program, cabin, miles, aircraft, and nonstop status, then the booking path and gotchas. Prose over bullet walls; no invented section headers for a one-line answer.
@@ -5186,6 +5326,22 @@ export function buildSynthesisContext(state: AgentStateType): string {
   const parts: string[] = [];
 
   parts.push(`User question:\n${lastUserText(state)}`);
+
+  const unresolvedPlaces = state.searchPlan?.unresolvedPlaces ?? [];
+  const ambiguousPlaces = state.searchPlan?.ambiguousPlaces ?? [];
+  if (unresolvedPlaces.length > 0 || ambiguousPlaces.length > 0) {
+    const lines: string[] = [];
+    if (unresolvedPlaces.length > 0) {
+      lines.push(`Places not recognized: ${unresolvedPlaces.join(", ")}.`);
+    }
+    for (const a of ambiguousPlaces) {
+      lines.push(`"${a.query}" matched multiple cities: ${a.candidates.join(", ")}.`);
+    }
+    parts.push(
+      `Location resolution notes (mention these to the user plainly — do not ` +
+        `silently ignore them):\n${lines.join("\n")}`,
+    );
+  }
 
   const options = (state.awardResults ?? []).slice(0, MAX_OPTIONS_IN_CONTEXT);
   if (options.length === 0) {
@@ -5275,7 +5431,7 @@ export async function synthesize(
 - [ ] **Step 6: Run tests to verify they pass**
 
 Run: `npx vitest run src/agent/nodes/synthesize.test.ts`
-Expected: PASS (8 tests).
+Expected: PASS (10 tests).
 
 - [ ] **Step 7: Commit**
 
@@ -6961,6 +7117,8 @@ git commit -m "feat(ui): add chat interface with status trail, option cards, and
 ---
 
 ### Task 7.1: Traceable client wrapper and run metadata
+
+**Pulled forward, executed before Phase 5 (2026-08-13):** the user asked for LangSmith tracing to be wired up now, ahead of its originally planned slot, specifically so manual testing during Phases 5-6 has real trace visibility into what the graph is doing — while deliberately leaving Tasks 7.2-7.5 (the eval datasets/harness) for their originally planned position in Phase 7. This task was chosen because it's the one piece of Phase 7 that's actually about tracing rather than evaluation: coarse per-node tracing (guard → triage → plan → search → ... as a trace tree) is already automatic via LangChain's own callback-based instrumentation once a real `LANGSMITH_API_KEY` exists — no code needed for that layer, it was silently no-op-ing (throwing harmless 403s) throughout Phase 4's live smoke tests because `LANGSMITH_TRACING=true` was set but the key was empty. This task adds the layer LangChain's auto-instrumentation can't provide on its own: child spans for each individual seats.aero HTTP call (so a `search_awards` node that fires six discovery probes shows six spans with their own latency and quota, not one opaque block).
 
 **Files:**
 - Create: `src/tools/seats-aero/traced.ts`
