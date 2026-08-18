@@ -126,6 +126,7 @@ export function buildSynthesisContext(state: AgentStateType): string {
 
   const allOptions = state.awardResults ?? [];
   const options = allOptions.slice(0, MAX_OPTIONS_IN_CONTEXT);
+  const optionNumberByAvailabilityId = new Map(options.map((option, index) => [option.availabilityId, index + 1]));
   if (options.length === 0) {
     if (state.intent === "knowledge") {
       parts.push("No availability search was performed for this question.");
@@ -144,7 +145,7 @@ export function buildSynthesisContext(state: AgentStateType): string {
         options
           .map(
             (o, i) =>
-              `${i + 1}. id=${o.availabilityId} ${o.origin}-${o.destination} ${o.date} ` +
+              `${i + 1}. ${o.origin}-${o.destination} ${o.date} ` +
               `program=${o.program} cabin=${o.cabin} miles=${o.miles} ` +
               `taxes=${o.taxes ?? "unknown"} taxesCurrency=${o.taxesCurrency ?? "unknown"} ` +
               `nonstop=${o.direct} airlines=${o.airlines} ` +
@@ -176,14 +177,14 @@ export function buildSynthesisContext(state: AgentStateType): string {
     }
   }
 
-  const trips = state.tripSummaries ?? [];
+  const trips = (state.tripSummaries ?? []).filter((trip) => optionNumberByAvailabilityId.has(trip.availabilityId));
   if (trips.length > 0) {
     parts.push(
       `Flight-card details (use only when a field adds decision value; do not restate each card):\n` +
         trips
           .map(
             (t) =>
-              `- for=${t.availabilityId} cabin=${t.cabin ?? "unknown"} miles=${t.miles ?? "unknown"} ` +
+              `- for option ${optionNumberByAvailabilityId.get(t.availabilityId)} cabin=${t.cabin ?? "unknown"} miles=${t.miles ?? "unknown"} ` +
               `taxes=${t.totalTaxes ?? "unknown"} taxesCurrency=${t.taxesCurrency ?? "unknown"} ` +
               `flights=${t.flightNumbers.join(",")} aircraft=${t.aircraft.join(",")} ` +
               `stops=${t.stops} connections=${t.connections?.map((connection) =>
@@ -200,12 +201,10 @@ export function buildSynthesisContext(state: AgentStateType): string {
     state.intent === "knowledge" || options.length > 0 ? (state.kbDocs ?? []) : [];
   if (docs.length > 0) {
     parts.push(
-      `Knowledge base excerpts (cite by id in square brackets):\n` +
+      `Internal research excerpts (use only for decision-changing facts; paraphrase and never mention these excerpts, their ids, or their sources):\n` +
         docs
           .map(
-            (d) =>
-              `[${d.id}] (${d.collection}, updated ${d.updated})\n${d.text}` +
-              (d.sources.length > 0 ? `\nSources: ${d.sources.join(", ")}` : ""),
+            (d, index) => `Research note ${index + 1} (${d.collection}, updated ${d.updated})\n${d.text}`,
           )
           .join("\n\n"),
     );
@@ -248,10 +247,27 @@ export async function synthesize(
             .map((b) => b.text ?? "")
             .join("");
 
-    return { draft: text };
+    return { draft: sanitizeUserFacingAnalysis(text, state) };
   } catch {
     return { draft: fallbackSynthesis(state) };
   }
+}
+
+/** Defense in depth: internal evidence identifiers are never part of Roam's analysis. */
+export function sanitizeUserFacingAnalysis(draft: string, state: Pick<AgentStateType, "awardResults" | "tripSummaries" | "kbDocs">): string {
+  const identifiers = new Set([
+    ...(state.awardResults ?? []).map((option) => option.availabilityId),
+    ...(state.tripSummaries ?? []).flatMap((trip) => [trip.availabilityId, trip.tripId]),
+    ...(state.kbDocs ?? []).map((doc) => doc.id),
+  ].filter(Boolean));
+
+  let sanitized = draft;
+  for (const identifier of identifiers) {
+    const escaped = identifier.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    sanitized = sanitized.replace(new RegExp(`\\[\\s*${escaped}\\s*\\]`, "g"), "");
+    sanitized = sanitized.replace(new RegExp(`(^|[^A-Za-z0-9_-])${escaped}(?=$|[^A-Za-z0-9_-])`, "g"), "$1");
+  }
+  return sanitized.replace(/[ \t]+\n/g, "\n").replace(/ {2,}/g, " ").trim();
 }
 
 /** A grounded fallback keeps the recorded-fixture demo useful without an LLM key. */

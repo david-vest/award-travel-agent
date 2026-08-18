@@ -25,6 +25,40 @@ describe("rankRecommendations", () => {
       tripSummaries: [{ availabilityId: "connection", tripId: "trip-1", flightNumbers: ["UA 1", "UA 2"], aircraft: [], carriers: ["UA"], stops: 1, connections: [{ airport: "LAX", layoverMinutes: 95 }] }],
     } as unknown as AgentStateType);
     expect(result.recommendations?.[0].connections).toEqual([{ airport: "LAX", layoverMinutes: 95 }]);
+    expect(result.recommendations?.[0].scoreFactors).toContainEqual({ label: "Layover", value: "1h 35m total" });
+  });
+
+  it("prefers a shorter layover when points, fees, and stops are equal", async () => {
+    const result = await rankRecommendations({
+      searchPlan: { origins: ["SFO"], destinations: ["HND"], cabins: ["business"], nonstopOnly: false, programs: [] },
+      awardResults: [
+        { availabilityId: "long", origin: "SFO", destination: "HND", date: "2026-09-18", program: "united", cabin: "business", miles: 60000, direct: false, airlines: "UA" },
+        { availabilityId: "short", origin: "SFO", destination: "HND", date: "2026-09-18", program: "united", cabin: "business", miles: 60000, direct: false, airlines: "UA" },
+      ],
+      tripSummaries: [
+        { availabilityId: "long", tripId: "trip-long", flightNumbers: [], aircraft: [], carriers: ["UA"], stops: 1, connections: [{ airport: "LAX", layoverMinutes: 300 }] },
+        { availabilityId: "short", tripId: "trip-short", flightNumbers: [], aircraft: [], carriers: ["UA"], stops: 1, connections: [{ airport: "LAX", layoverMinutes: 60 }] },
+      ],
+    } as unknown as AgentStateType);
+
+    expect(result.recommendations?.map((item) => item.id)).toEqual(["short:business", "long:business"]);
+  });
+
+  it("prefers fewer stops when points, fees, and total layover time are equal", async () => {
+    const result = await rankRecommendations({
+      searchPlan: { origins: ["SFO"], destinations: ["HND"], cabins: ["business"], nonstopOnly: false, programs: [] },
+      awardResults: [
+        { availabilityId: "two-stops", origin: "SFO", destination: "HND", date: "2026-09-18", program: "united", cabin: "business", miles: 60000, direct: false, airlines: "UA" },
+        { availabilityId: "one-stop", origin: "SFO", destination: "HND", date: "2026-09-18", program: "united", cabin: "business", miles: 60000, direct: false, airlines: "UA" },
+      ],
+      tripSummaries: [
+        { availabilityId: "two-stops", tripId: "trip-two", flightNumbers: [], aircraft: [], carriers: ["UA"], stops: 2, connections: [{ airport: "LAX", layoverMinutes: 30 }, { airport: "SEA", layoverMinutes: 30 }] },
+        { availabilityId: "one-stop", tripId: "trip-one", flightNumbers: [], aircraft: [], carriers: ["UA"], stops: 1, connections: [{ airport: "SEA", layoverMinutes: 60 }] },
+      ],
+    } as unknown as AgentStateType);
+
+    expect(result.recommendations?.map((item) => item.id)).toEqual(["one-stop:business", "two-stops:business"]);
+    expect(result.recommendations?.[0].scoreFactors).toContainEqual({ label: "Stops", value: "1 stop" });
   });
 
   it("labels positioning options while keeping a modest exact-route preference", async () => {

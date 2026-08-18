@@ -34,6 +34,30 @@ const POSITIONING_PENALTY: Record<NonNullable<AwardOption["searchTier"]>, number
   region_pair: 35_000,
 };
 
+/** Points-equivalent comfort costs used only to order otherwise viable awards. */
+const STOP_PENALTY = 6_000;
+const LAYOVER_PENALTY_PER_HOUR = 500;
+const MAX_SCORED_LAYOVER_MINUTES = 24 * 60;
+
+function stopCount(option: AwardOption, trip?: TripSummary): number {
+  if (option.direct) return 0;
+  return Math.max(1, trip?.stops ?? trip?.connections?.length ?? 1);
+}
+
+function knownLayoverMinutes(trip?: TripSummary): number | undefined {
+  const known = (trip?.connections ?? [])
+    .map((connection) => connection.layoverMinutes)
+    .filter((minutes): minutes is number => minutes != null && Number.isFinite(minutes) && minutes >= 0);
+  if (known.length === 0) return undefined;
+  return known.reduce((total, minutes) => total + minutes, 0);
+}
+
+function formatMinutes(minutes: number): string {
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return hours ? `${hours}h${remainder ? ` ${remainder}m` : ""}` : `${remainder}m`;
+}
+
 /**
  * The product ranking is deterministic and inspectable. The model later
  * explains this ranking; it does not silently decide which provider result is
@@ -60,6 +84,8 @@ export async function rankRecommendations(
     score += POSITIONING_PENALTY[tier];
     if (tier !== "exact") factors.push({ label: "Positioning", value: tier.replaceAll("_", " ") });
 
+    const stops = stopCount(option, trip);
+    const layoverMinutes = knownLayoverMinutes(trip);
     if (option.direct) {
       score -= plan?.stopPreference === "up_to_one" ? 4_000 : 1_500;
       factors.push({ label: "Stops", value: "Nonstop" });
@@ -67,7 +93,12 @@ export async function rankRecommendations(
       score += 1_000_000;
       factors.push({ label: "Stops", value: "Connection — excluded by preference" });
     } else {
-      factors.push({ label: "Stops", value: trip?.stops != null ? `${trip.stops} stop${trip.stops === 1 ? "" : "s"}` : "Connection" });
+      score += stops * STOP_PENALTY;
+      factors.push({ label: "Stops", value: `${stops} stop${stops === 1 ? "" : "s"}` });
+      if (layoverMinutes != null) {
+        score += (Math.min(layoverMinutes, MAX_SCORED_LAYOVER_MINUTES) / 60) * LAYOVER_PENALTY_PER_HOUR;
+        factors.push({ label: "Layover", value: `${formatMinutes(layoverMinutes)} total` });
+      }
     }
 
     if (plan?.preferredAirlines?.some((airline) => carriers.includes(airline))) {

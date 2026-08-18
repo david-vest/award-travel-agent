@@ -2,6 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import type { AgentEvent, AgentStage, FlightRecommendation, TripRequest } from "../src/contracts/travel-search";
+import type { StoredAgentRun } from "../src/local/last-search";
 
 type RunStatus = "idle" | "running" | "complete" | "error";
 type StageState = Record<AgentStage, "waiting" | "active" | "complete">;
@@ -88,6 +89,34 @@ export function useAgentRun() {
     }
   }, [processEvent]);
 
+  const restore = useCallback((snapshot: StoredAgentRun) => {
+    controllerRef.current?.abort();
+    controllerRef.current = null;
+    threadRef.current = snapshot.threadId;
+    setStatus(snapshot.status);
+    setStages(snapshot.stages);
+    setStageDetails(snapshot.stageDetails);
+    setStageDurations(snapshot.stageDurations);
+    setRecommendations(snapshot.recommendations);
+    setAnswer(snapshot.answer);
+    setError(snapshot.error);
+    setThreadId(snapshot.threadId);
+  }, []);
+
+  const reset = useCallback(() => {
+    controllerRef.current?.abort();
+    controllerRef.current = null;
+    threadRef.current = null;
+    setStatus("idle");
+    setStages(waitingStages);
+    setStageDetails(waitingDetails);
+    setStageDurations({});
+    setRecommendations([]);
+    setAnswer("");
+    setError(null);
+    setThreadId(null);
+  }, []);
+
   const cancel = useCallback(() => controllerRef.current?.abort(), []);
-  return { status, stages, stageDetails, stageDurations, recommendations, answer, error, threadId, start, cancel };
+  return { status, stages, stageDetails, stageDurations, recommendations, answer, error, threadId, start, restore, reset, cancel };
 }

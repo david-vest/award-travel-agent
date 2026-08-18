@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { HumanMessage } from "@langchain/core/messages";
-import { buildNoFlightsDraft, buildSynthesisContext } from "./synthesize";
+import { buildNoFlightsDraft, buildSynthesisContext, sanitizeUserFacingAnalysis } from "./synthesize";
 import { SYNTHESIZE_PROMPT } from "../prompts/synthesize";
 import { estimateTokens, CACHE_MIN_TOKENS } from "../cache";
 import type { AgentStateType } from "../state";
@@ -48,6 +48,7 @@ describe("buildSynthesisContext", () => {
     expect(ctx).toContain("87500");
     expect(ctx).toContain("taxes=112.9");
     expect(ctx).toContain("taxesCurrency=USD");
+    expect(ctx).not.toContain("a1");
   });
 
   it("names the selected card that transfers to the shown option's program", () => {
@@ -79,15 +80,15 @@ describe("buildSynthesisContext", () => {
     }));
     const ctx = buildSynthesisContext(state({ awardResults: options }));
     expect(ctx).toContain("5 of 7 returned");
-    expect(ctx).toContain("id=a5");
-    expect(ctx).not.toContain("id=a6");
+    expect(ctx).toContain("5. ORD-NRT");
+    expect(ctx).not.toContain("a6");
   });
 
   it("includes the user question", () => {
     expect(buildSynthesisContext(state())).toContain("options to Tokyo?");
   });
 
-  it("labels knowledge documents with their ids so they can be cited", () => {
+  it("keeps knowledge document identifiers and sources out of the writer context", () => {
     const s = state({
       kbDocs: [
         {
@@ -99,7 +100,10 @@ describe("buildSynthesisContext", () => {
         },
       ],
     });
-    expect(buildSynthesisContext(s)).toContain("ana-777");
+    const ctx = buildSynthesisContext(s);
+    expect(ctx).toContain("The Room is excellent.");
+    expect(ctx).not.toContain("ana-777");
+    expect(ctx).not.toContain("https://x");
   });
 
   it("suppresses knowledge excerpts when a flight search found no options", () => {
@@ -186,7 +190,7 @@ describe("buildSynthesisContext", () => {
     expect(buildSynthesisContext(state())).toContain("2026-08-11T09:00:00Z");
   });
 
-  it("labels each trip-details line with the availabilityId, cabin, and miles it belongs to", () => {
+  it("labels trip details with their visible option number instead of an availability id", () => {
     const s = state({
       tripSummaries: [
         {
@@ -204,7 +208,8 @@ describe("buildSynthesisContext", () => {
       ],
     });
     const ctx = buildSynthesisContext(s);
-    expect(ctx).toContain("for=a1");
+    expect(ctx).toContain("for option 1");
+    expect(ctx).not.toContain("a1");
     expect(ctx).toContain("cabin=business");
     expect(ctx).toContain("miles=87500");
     expect(ctx).toContain("taxes=73.4");
@@ -281,6 +286,15 @@ describe("buildSynthesisContext", () => {
     expect(ctx).toContain("San Francisco");
     expect(ctx).toContain("San Diego");
   });
+
+  it("strips availability, trip, and knowledge identifiers from user-facing analysis", () => {
+    const s = state({
+      tripSummaries: [{ availabilityId: "a1", tripId: "trip-private", flightNumbers: [], aircraft: [], carriers: [], stops: 0 }],
+      kbDocs: [{ id: "ana-777", collection: "products", text: "Internal note", sources: [], updated: "2026-06-01" }],
+    });
+    const draft = "Use option a1 [ana-777]; trip-private is internal.";
+    expect(sanitizeUserFacingAnalysis(draft, s)).toBe("Use option ; is internal.");
+  });
 });
 
 describe("buildNoFlightsDraft", () => {
@@ -343,5 +357,11 @@ describe("SYNTHESIZE_PROMPT", () => {
     expect(SYNTHESIZE_PROMPT).toContain("**Next step:**");
     expect(SYNTHESIZE_PROMPT).toContain("never exceed 220 words");
     expect(SYNTHESIZE_PROMPT).toMatch(/Do not enumerate all\s+alternatives/);
+  });
+
+  it("keeps internal research and provider identifiers out of user-facing analysis", () => {
+    expect(SYNTHESIZE_PROMPT).toMatch(/never say "knowledge base"/i);
+    expect(SYNTHESIZE_PROMPT).toMatch(/Availability IDs,[\s\S]*never user-facing/i);
+    expect(SYNTHESIZE_PROMPT).not.toMatch(/cite that excerpt's id/i);
   });
 });

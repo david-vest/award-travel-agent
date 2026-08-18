@@ -1,26 +1,37 @@
 "use client";
 
 import {
-  AirplaneTilt, ArrowsDownUp, ArrowLeft, ArrowRight, CalendarBlank, CaretDown,
+  AirplaneTilt, ArrowsDownUp, ArrowLeft, ArrowRight, ArrowSquareOut, CalendarBlank, CaretDown,
   CaretLeft, CaretRight, Check, CheckCircle, GlobeHemisphereWest, LockKey,
-  Funnel, MagnifyingGlass, MapPin, PaperPlaneTilt, Sparkle, Star, Trophy, User, X,
+  Funnel, MagnifyingGlass, MapPin, Minus, PaperPlaneTilt, Plus, Sparkle, Star, Trophy, User, X,
 } from "@phosphor-icons/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { AWARD_PROGRAMS, CREDIT_CARD_PROGRAMS, type AwardProgramId, type CreditCardProgramId } from "../src/domain/programs";
+import { SUPPORTED_AIRLINES } from "../src/domain/airlines";
 import type { FlightRecommendation, TripRequest } from "../src/contracts/travel-search";
+import {
+  LAST_SEARCH_STORAGE_KEY,
+  parseLastSearchSnapshot,
+  type LastSearchSnapshot,
+  type StoredAgentRun,
+  type StoredChatMessage,
+  type StoredLocation,
+  type StoredSearchForm,
+} from "../src/local/last-search";
 import { AirlineLogo } from "./AirlineLogo";
 import { activeFlightFilterCount, applyFlightControls, DEFAULT_FLIGHT_FILTERS, FLIGHT_SORT_OPTIONS, type FlightResultFilters, type FlightSort } from "./flight-results";
 import { useAgentRun } from "./useAgentRun";
+import { formatSchedule } from "../src/ui/flight-times";
+import { bookingProgramName, bookingUrlForFlight } from "../src/booking-links";
 import styles from "./page.module.css";
 
-type LocationOption = {
-  kind: "airport" | "city" | "group" | "custom"; code: string; city: string; country: string; airports: string[];
-};
+type LocationOption = StoredLocation;
 
 type Cabin = "economy" | "premium" | "business" | "first";
-type OpenPanel = "origin" | "destinations" | "dates" | "cabins" | "travelers" | "points" | "airlines" | null;
+type OpenPanel = "origin" | "destinations" | "dates" | "cabins" | "points" | "airlines" | null;
+const CLEARED_LAST_SEARCH_STORAGE_KEY = "roam:last-search:cleared:v1";
 
 const researchSteps = [
   { title: "Search live award space", evidence: "Seats.aero availability" },
@@ -41,17 +52,8 @@ const cabinOptions: { id: Cabin; name: string; short: string; code: string }[] =
   { id: "first", name: "First", short: "First", code: "F" },
 ];
 
-const airlineOptions = [
-  { code: "NH", name: "ANA" }, { code: "JL", name: "Japan Airlines" },
-  { code: "UA", name: "United" }, { code: "KE", name: "Korean Air" },
-  { code: "BR", name: "EVA Air" },
-];
-
-const simpleOptions = { travelers: ["1 traveler", "2 travelers", "3 travelers", "4 travelers"] };
-
-
 export default function Home() {
-  const [origin, setOrigin] = useState(originInitial);
+  const [origin, setOrigin] = useState<LocationOption | null>(originInitial);
   const [destinations, setDestinations] = useState(destinationInitial);
   const [startDate, setStartDate] = useState("2026-09-18");
   const [endDate, setEndDate] = useState("2026-09-27");
@@ -65,6 +67,7 @@ export default function Home() {
   const [maxFees, setMaxFees] = useState("");
   const [stops, setStops] = useState<"nonstop" | "one" | "any">("one");
   const [preferredAirlines, setPreferredAirlines] = useState<string[]>([]);
+  const [airlineQuery, setAirlineQuery] = useState("");
   const [openPanel, setOpenPanel] = useState<OpenPanel>(null);
   const [notes, setNotes] = useState("");
   const [activeFlight, setActiveFlight] = useState(0);
@@ -73,15 +76,105 @@ export default function Home() {
   const [flightSort, setFlightSort] = useState<FlightSort>("recommended");
   const [resultFilters, setResultFilters] = useState<FlightResultFilters>(DEFAULT_FLIGHT_FILTERS);
   const railRef = useRef<HTMLDivElement>(null);
+  const lastSubmittedFormRef = useRef<StoredSearchForm | null>(null);
+  const chatMessageSequenceRef = useRef(0);
   const [followUp, setFollowUp] = useState("");
+  const [chatMessages, setChatMessages] = useState<StoredChatMessage[]>([]);
   const agentRun = useAgentRun();
+  const restoreAgentRun = agentRun.restore;
+  const resetAgentRun = agentRun.reset;
   const allFlights = agentRun.recommendations;
   const flights = useMemo(() => applyFlightControls(allFlights, flightSort, resultFilters), [allFlights, flightSort, resultFilters]);
   const filterCount = activeFlightFilterCount(resultFilters);
   const availableCabins = useMemo(() => [...new Set(allFlights.map((flight) => flight.cabin))], [allFlights]);
   const availablePrograms = useMemo(() => [...new Map(allFlights.map((flight) => [flight.program.id, flight.program])).values()], [allFlights]);
   const running = agentRun.status === "running";
+  const canSearch = origin !== null && destinations.length > 0 && Boolean(startDate && endDate) && cabins.length > 0;
+  const analysisPending = running && !agentRun.answer;
   const activeFlightIndex = Math.min(activeFlight, Math.max(0, flights.length - 1));
+  const travelerCount = travelerCountFromLabel(travelers);
+  const filteredAirlines = useMemo(() => {
+    const query = airlineQuery.trim().toLowerCase();
+    return query ? SUPPORTED_AIRLINES.filter((airline) => airline.name.toLowerCase().includes(query) || airline.code.toLowerCase().includes(query)) : SUPPORTED_AIRLINES;
+  }, [airlineQuery]);
+
+  const resetSearchForm = useCallback(() => {
+    setOrigin(null);
+    setDestinations([]);
+    setStartDate("");
+    setEndDate("");
+    setFlexDays(0);
+    setCabins([]);
+    setTravelers("1 traveler");
+    setSelectedCreditPrograms([]);
+    setSelectedAwardPrograms([]);
+    setCreditCardBalances({});
+    setAwardProgramBalances({});
+    setMaxFees("");
+    setStops("one");
+    setPreferredAirlines([]);
+    setAirlineQuery("");
+    setNotes("");
+    setOpenPanel(null);
+    setActiveFlight(0);
+    setBookingOpen(false);
+    setFiltersOpen(false);
+    setFlightSort("recommended");
+    setResultFilters(DEFAULT_FLIGHT_FILTERS);
+    setFollowUp("");
+    setChatMessages([]);
+  }, []);
+
+  useEffect(() => {
+    if (hasClearedLastSearch()) {
+      const timer = window.setTimeout(() => {
+        resetSearchForm();
+        resetAgentRun();
+      }, 0);
+      return () => window.clearTimeout(timer);
+    }
+
+    const snapshot = readLastSearch();
+    if (!snapshot) return;
+
+    const timer = window.setTimeout(() => {
+      const form = snapshot.form;
+      lastSubmittedFormRef.current = form;
+      setOrigin(form.origin);
+      setDestinations(form.destinations);
+      setStartDate(form.startDate);
+      setEndDate(form.endDate);
+      setFlexDays(form.flexDays);
+      setCabins(form.cabins);
+      setTravelers(form.travelers);
+      setSelectedCreditPrograms(form.selectedCreditPrograms.filter(isCreditCardProgramId));
+      setSelectedAwardPrograms(form.selectedAwardPrograms.filter(isAwardProgramId));
+      setCreditCardBalances(form.creditCardBalances as Partial<Record<CreditCardProgramId, string>>);
+      setAwardProgramBalances(form.awardProgramBalances as Partial<Record<AwardProgramId, string>>);
+      setMaxFees(form.maxFees);
+      setStops(form.stops);
+      setPreferredAirlines(form.preferredAirlines);
+      setNotes(form.notes);
+      setChatMessages(snapshot.chatMessages);
+      if (snapshot.run) restoreAgentRun(snapshot.run);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [resetAgentRun, resetSearchForm, restoreAgentRun]);
+
+  useEffect(() => {
+    if ((agentRun.status !== "complete" && agentRun.status !== "error") || !lastSubmittedFormRef.current) return;
+    const run: StoredAgentRun = {
+      status: agentRun.status,
+      stages: agentRun.stages,
+      stageDetails: agentRun.stageDetails,
+      stageDurations: agentRun.stageDurations,
+      recommendations: agentRun.recommendations,
+      answer: agentRun.answer,
+      error: agentRun.error,
+      threadId: agentRun.threadId,
+    };
+    writeLastSearch({ version: 1, savedAt: new Date().toISOString(), form: lastSubmittedFormRef.current, run, chatMessages });
+  }, [agentRun.answer, agentRun.error, agentRun.recommendations, agentRun.stageDetails, agentRun.stageDurations, agentRun.stages, agentRun.status, agentRun.threadId, chatMessages]);
 
   const changeResultFilters = (next: FlightResultFilters) => {
     setResultFilters(next);
@@ -90,7 +183,27 @@ export default function Home() {
   };
 
   const runSearch = () => {
-    if (running) return;
+    if (running || !origin || !destinations.length || !startDate || !endDate || !cabins.length) return;
+    const form: StoredSearchForm = {
+      origin,
+      destinations,
+      startDate,
+      endDate,
+      flexDays,
+      cabins,
+      travelers,
+      selectedCreditPrograms,
+      selectedAwardPrograms,
+      creditCardBalances,
+      awardProgramBalances,
+      maxFees,
+      stops,
+      preferredAirlines,
+      notes,
+    };
+    lastSubmittedFormRef.current = form;
+    setChatMessages([]);
+    writeLastSearch({ version: 1, savedAt: new Date().toISOString(), form, run: null, chatMessages: [] });
     const request: TripRequest = {
       origin: { code: origin.code, airports: origin.airports, custom: origin.kind === "custom" },
       destinations: destinations.map((destination) => ({ code: destination.code, airports: destination.airports, custom: destination.kind === "custom" })),
@@ -113,6 +226,31 @@ export default function Home() {
     setOpenPanel(null); setActiveFlight(0);
     railRef.current?.scrollTo({ left: 0, behavior: "smooth" });
     void agentRun.start({ request });
+  };
+
+  const sendFollowUp = () => {
+    const message = followUp.trim();
+    if (!message || running) return;
+
+    const nextMessageId = (role: StoredChatMessage["role"]) => {
+      chatMessageSequenceRef.current += 1;
+      return `${role}-${Date.now()}-${chatMessageSequenceRef.current}`;
+    };
+    const previousAnswer = agentRun.answer.trim();
+    setChatMessages((current) => [
+      ...current,
+      ...(previousAnswer ? [{ id: nextMessageId("assistant"), role: "assistant" as const, content: previousAnswer }] : []),
+      { id: nextMessageId("user"), role: "user", content: message },
+    ]);
+    setFollowUp("");
+    void agentRun.start({ message });
+  };
+
+  const clearSearch = () => {
+    resetAgentRun();
+    lastSubmittedFormRef.current = null;
+    resetSearchForm();
+    clearLastSearch();
   };
 
   const moveCarousel = (nextIndex: number) => {
@@ -169,11 +307,11 @@ export default function Home() {
         <section id="search" className={styles.searchPanel} aria-labelledby="search-heading">
           <div className={styles.panelIntro}><h1 id="search-heading">Where should Roam take you?</h1><p>Set the boundaries. Roam will research the best way to book.</p></div>
           <div className={styles.fields}>
-            <AirportPicker title="From" icon={<MapPin size={23} />} value={[origin]} multiple={false} open={openPanel === "origin"} onToggle={() => setOpenPanel(openPanel === "origin" ? null : "origin")} onChange={(value) => { setOrigin(value[0]); setOpenPanel(null); }} />
+            <AirportPicker title="From" icon={<MapPin size={23} />} value={origin ? [origin] : []} multiple={false} open={openPanel === "origin"} onToggle={() => setOpenPanel(openPanel === "origin" ? null : "origin")} onChange={(value) => { setOrigin(value[0] ?? null); setOpenPanel(null); }} />
             <AirportPicker title="Possible destinations" icon={<GlobeHemisphereWest size={23} />} value={destinations} multiple open={openPanel === "destinations"} onToggle={() => setOpenPanel(openPanel === "destinations" ? null : "destinations")} onChange={setDestinations} />
             <DatePicker start={startDate} end={endDate} flexDays={flexDays} open={openPanel === "dates"} onToggle={() => setOpenPanel(openPanel === "dates" ? null : "dates")} onDatesChange={(start, end) => { setStartDate(start); setEndDate(end); }} onFlexChange={setFlexDays} />
             <CabinPicker selected={cabins} open={openPanel === "cabins"} onToggle={() => setOpenPanel(openPanel === "cabins" ? null : "cabins")} onChange={setCabins} />
-            <SimpleField icon={<User size={23} />} title="Travelers" value={travelers} options={simpleOptions.travelers} open={openPanel === "travelers"} onToggle={() => setOpenPanel(openPanel === "travelers" ? null : "travelers")} onChange={(value) => { setTravelers(value); setOpenPanel(null); }} />
+            <TravelerStepper count={travelerCount} onChange={(count) => setTravelers(travelerLabel(count))} />
             <PointsPicker value={pointsLabel} selectedCards={selectedCreditPrograms} selectedPrograms={selectedAwardPrograms} cardBalances={creditCardBalances} programBalances={awardProgramBalances} open={openPanel === "points"} onToggle={() => setOpenPanel(openPanel === "points" ? null : "points")} onToggleCard={toggleCreditProgram} onToggleProgram={toggleAwardProgram} onCardBalance={(id, value) => setCreditCardBalances((current) => ({ ...current, [id]: digitsOnly(value) }))} onProgramBalance={(id, value) => setAwardProgramBalances((current) => ({ ...current, [id]: digitsOnly(value) }))} onClear={() => { setSelectedCreditPrograms([]); setSelectedAwardPrograms([]); setCreditCardBalances({}); setAwardProgramBalances({}); }} />
           </div>
 
@@ -185,17 +323,19 @@ export default function Home() {
               </div>
               <div className={styles.airlineFilterWrap} data-popover>
                 <button className={styles.airlineFilterButton} aria-expanded={openPanel === "airlines"} onClick={() => setOpenPanel(openPanel === "airlines" ? null : "airlines")}>{preferredAirlines.length ? `${preferredAirlines.length} airline${preferredAirlines.length > 1 ? "s" : ""}` : "Any airline"}<CaretDown size={13} weight="bold" /></button>
-                {openPanel === "airlines" && <div className={styles.airlineMenu}>{airlineOptions.map((airline) => {
+                {openPanel === "airlines" && <div className={styles.airlineMenu}>
+                  <div className={styles.airlineMenuHeader}><label className={styles.airlineSearch}><MagnifyingGlass size={14} /><input autoFocus value={airlineQuery} onChange={(event) => setAirlineQuery(event.target.value)} placeholder="Filter airlines" /></label>{preferredAirlines.length > 0 && <button className={styles.clearAirlines} onClick={() => { setPreferredAirlines([]); setAirlineQuery(""); }}>Clear</button>}</div>
+                  <div className={styles.airlineList}>{filteredAirlines.map((airline) => {
                   const selected = preferredAirlines.includes(airline.code);
-                  return <button key={airline.code} className={selected ? styles.selectedOption : ""} onClick={() => setPreferredAirlines((current) => selected ? current.filter((code) => code !== airline.code) : [...current, airline.code])}><AirlineLogo code={airline.code} name={airline.name} size={25} /><span>{airline.name}</span><Check size={14} weight="bold" /></button>;
-                })}</div>}
+                  return <button key={airline.code} className={selected ? styles.selectedOption : ""} onClick={() => setPreferredAirlines((current) => selected ? current.filter((code) => code !== airline.code) : [...current, airline.code])}><AirlineLogo code={airline.code} name={airline.name} size={25} /><span>{airline.name}</span><small>{airline.code}</small><Check size={14} weight="bold" /></button>;
+                })}</div></div>}
               </div>
               <label className={styles.limitField}><span>Max taxes &amp; fees</span><div><b>$</b><input inputMode="decimal" value={maxFees} onChange={(event) => setMaxFees(decimalOnly(event.target.value))} placeholder="Any" aria-label="Maximum taxes and fees per traveler in USD" /><small>USD / traveler</small></div></label>
             </div>
           </div>
 
-          <label className={styles.textLabel}><span>Anything else Roam should know?</span><div className={styles.notesInput}><input value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="e.g., avoid early departures, prefer window seats…" /><PaperPlaneTilt size={20} /></div></label>
-          <button className={styles.planButton} onClick={runSearch} disabled={running}>{running ? "Planning your trip" : "Plan my trip"}{running ? <Sparkle size={20} weight="fill" /> : <ArrowRight size={20} weight="bold" />}</button>
+          <label className={styles.textLabel}><span>Anything else Roam should know?</span><div className={styles.notesInput}><input value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="e.g., avoid early departures, prefer Citi transfer options…" /><PaperPlaneTilt size={20} /></div></label>
+          <div className={styles.searchActions}><button className={styles.clearSearchButton} onClick={clearSearch}>Clear all</button><button className={styles.planButton} onClick={runSearch} disabled={running || !canSearch}>{running ? "Planning your trip" : "Plan my trip"}{running ? <Sparkle size={20} weight="fill" /> : <ArrowRight size={20} weight="bold" />}</button></div>
           <p className={styles.privacyNote}><LockKey size={14} /> Roam searches live award space and program rules in real time.</p>
         </section>
 
@@ -249,13 +389,19 @@ export default function Home() {
               {!flights.length && <div className={styles.emptyResults}>{agentRun.error ? agentRun.error : running ? "Roam is checking live award availability…" : allFlights.length ? "No flights match these result filters. Clear or widen a filter to see more options." : "Your ranked, grounded recommendations will appear here."}</div>}
             </div>
             {flights.length > 0 && <><div className={styles.scrollTrack}><span style={{ width: `${100 / flights.length}%`, transform: `translateX(${activeFlightIndex * 100}%)` }} /></div><p className={styles.scrollHint}>Best match first · scroll to compare every verified option.</p></>}
-            <div className={styles.followUp}><input value={followUp} onChange={(event) => setFollowUp(event.target.value)} placeholder="Ask Roam a follow-up…" onKeyDown={(event) => { if (event.key === "Enter" && followUp.trim() && !running) { void agentRun.start({ message: followUp.trim() }); setFollowUp(""); } }} /><button disabled={!followUp.trim() || running} onClick={() => { if (followUp.trim()) { void agentRun.start({ message: followUp.trim() }); setFollowUp(""); } }}><PaperPlaneTilt size={16} /></button></div>
-            {agentRun.answer && <div className={styles.agentAnswer}><div className={styles.agentAnswerLabel}><Sparkle size={15} weight="fill" /> Roam&apos;s analysis</div><ReactMarkdown remarkPlugins={[remarkGfm]}>{agentRun.answer}</ReactMarkdown></div>}
+            {(chatMessages.length > 0 || analysisPending || agentRun.answer) && <div className={styles.chatThread} aria-label="Follow-up conversation">
+              {chatMessages.map((message) => message.role === "user"
+                ? <div className={styles.userMessage} key={message.id}><div className={styles.userMessageLabel}>You</div><p>{message.content}</p></div>
+                : <div className={styles.agentAnswer} key={message.id}><div className={styles.agentAnswerLabel}><Sparkle size={15} weight="fill" /> Roam</div><ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown></div>)}
+              {analysisPending && <div className={`${styles.agentAnswer} ${styles.agentAnswerPending}`} role="status" aria-live="polite"><div className={styles.agentAnswerLabel}><span className={styles.analysisSpinner} aria-hidden="true" /> Roam&apos;s analysis</div><p>{allFlights.length ? "The recommended flights are ready. Roam is finishing the comparison and booking analysis…" : "Roam is preparing the flight analysis…"}</p></div>}
+              {agentRun.answer && <div className={styles.agentAnswer}><div className={styles.agentAnswerLabel}><Sparkle size={15} weight="fill" /> Roam&apos;s analysis</div><ReactMarkdown remarkPlugins={[remarkGfm]}>{agentRun.answer}</ReactMarkdown></div>}
+            </div>}
+            <div className={styles.followUp}><input value={followUp} onChange={(event) => setFollowUp(event.target.value)} placeholder="Ask Roam a follow-up…" onKeyDown={(event) => { if (event.key === "Enter") sendFollowUp(); }} /><button aria-label="Send follow-up" disabled={!followUp.trim() || running} onClick={sendFollowUp}><PaperPlaneTilt size={16} /></button></div>
           </section>
         </section>
       </main>
 
-      {bookingOpen && flights[activeFlightIndex] && <BookingModal flight={flights[activeFlightIndex]} onClose={() => setBookingOpen(false)} />}
+      {bookingOpen && flights[activeFlightIndex] && <BookingModal flight={flights[activeFlightIndex]} travelers={travelerCount} onClose={() => setBookingOpen(false)} />}
       {filtersOpen && <FlightFiltersModal filters={resultFilters} availableCabins={availableCabins} availablePrograms={availablePrograms} resultCount={flights.length} onChange={changeResultFilters} onClose={() => setFiltersOpen(false)} />}
     </div>
   );
@@ -290,16 +436,22 @@ function AirportPicker({ title, icon, value, multiple, open, onToggle, onChange 
     return () => { window.clearTimeout(timer); controller.abort(); };
   }, [open, query]);
 
-  const display = multiple ? value.map((item) => item.city).join(" + ") : value[0].kind === "custom" ? value[0].city : `${value[0].code} · ${value[0].city}`;
+  const display = multiple
+    ? value.length ? value.map((item) => item.city).join(" + ") : "Add destinations"
+    : !value[0] ? "Choose an origin" : value[0].kind === "custom" ? value[0].city : `${value[0].code} · ${value[0].city}`;
   const select = (option: LocationOption) => {
     if (!multiple) { onChange([option]); setQuery(""); return; }
     const selected = value.some((item) => item.code === option.code);
     const next = selected ? value.filter((item) => item.code !== option.code) : [...value, option];
-    if (next.length) onChange(next);
+    onChange(next);
+  };
+  const remove = (option: LocationOption) => {
+    if (!multiple) { onChange([]); return; }
+    onChange(value.filter((item) => item.code !== option.code));
   };
 
   return <div className={styles.fieldWrap} data-popover><FieldButton icon={icon} title={title} value={display} open={open} onClick={onToggle} />{open && <div className={`${styles.fieldMenu} ${styles.airportMenu}`}>
-    {multiple && <div className={styles.selectedLocations}>{value.map((item) => <button key={item.code} onClick={() => select(item)}>{item.city}<X size={12} /></button>)}</div>}
+    {value.length > 0 && <div className={styles.selectedLocations}>{value.map((item) => <button key={item.code} onClick={() => remove(item)}>{item.city}<X size={12} /></button>)}</div>}
     <label className={styles.searchBox}><MagnifyingGlass size={16} /><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && query.trim()) { event.preventDefault(); select({ kind: "custom", code: query.trim(), city: query.trim(), country: "Roam will choose the airport", airports: [] }); } }} placeholder={multiple ? "Search a city, place, or airport to add" : "Search city, place, airport, or code"} /></label>
     <div className={styles.locationResults}>
       {!query && <p className={styles.menuPrompt}>Try “Tokyo”, “Europe”, “EUR”, or “JFK”.</p>}
@@ -316,10 +468,10 @@ function AirportPicker({ title, icon, value, multiple, open, onToggle, onChange 
 function DatePicker({ start, end, flexDays, open, onToggle, onDatesChange, onFlexChange }: { start: string; end: string; flexDays: number; open: boolean; onToggle: () => void; onDatesChange: (start: string, end: string) => void; onFlexChange: (days: number) => void }) {
   const [month, setMonth] = useState(() => new Date(2026, 8, 1));
   const days = useMemo(() => calendarDays(month), [month]);
-  const startValue = parseDate(start); const endValue = end ? parseDate(end) : null;
+  const startValue = start ? parseDate(start) : null; const endValue = end ? parseDate(end) : null;
   const selectDay = (day: Date) => {
     if (day < todayAtMidnight()) return;
-    if (!start || end || day < startValue) onDatesChange(toDateKey(day), "");
+    if (!start || end || !startValue || day < startValue) onDatesChange(toDateKey(day), "");
     else onDatesChange(start, toDateKey(day));
   };
 
@@ -329,7 +481,7 @@ function DatePicker({ start, end, flexDays, open, onToggle, onDatesChange, onFle
     <div className={styles.calendarGrid}>{days.map((day) => {
       const key = toDateKey(day); const outside = day.getMonth() !== month.getMonth();
       const disabled = day < todayAtMidnight(); const selected = key === start || key === end;
-      const inRange = endValue && day > startValue && day < endValue;
+      const inRange = Boolean(endValue && startValue && day > startValue && day < endValue);
       return <button key={key} disabled={disabled} className={`${outside ? styles.outsideMonth : ""} ${selected ? styles.selectedDay : ""} ${inRange ? styles.inRange : ""}`} onClick={() => selectDay(day)}>{day.getDate()}</button>;
     })}</div>
     <div className={styles.flexPicker}><span>Flexible dates</span><div>{[0, 1, 2, 3, 7].map((days) => <button key={days} className={flexDays === days ? styles.filterActive : ""} onClick={() => onFlexChange(days)}>{days ? `±${days}` : "Exact"}</button>)}</div></div>
@@ -337,15 +489,23 @@ function DatePicker({ start, end, flexDays, open, onToggle, onDatesChange, onFle
 }
 
 function CabinPicker({ selected, open, onToggle, onChange }: { selected: Cabin[]; open: boolean; onToggle: () => void; onChange: (cabins: Cabin[]) => void }) {
-  const label = cabinOptions.filter((option) => selected.includes(option.id)).map((option) => option.short).join(" · ");
+  const label = cabinOptions.filter((option) => selected.includes(option.id)).map((option) => option.short).join(" · ") || "Choose cabins";
   return <div className={styles.fieldWrap} data-popover><FieldButton icon={<AirplaneTilt size={23} />} title="Cabin classes" value={label} open={open} onClick={onToggle} />{open && <div className={`${styles.fieldMenu} ${styles.cabinMenu}`}>{cabinOptions.map((option) => {
     const active = selected.includes(option.id);
-    return <button key={option.id} className={active ? styles.selectedOption : ""} onClick={() => { const next = active ? selected.filter((item) => item !== option.id) : [...selected, option.id]; if (next.length) onChange(next); }}><span className={styles.cabinCode}>{option.code}</span><span>{option.name}</span><Check size={15} weight="bold" /></button>;
+    return <button key={option.id} className={active ? styles.selectedOption : ""} onClick={() => onChange(active ? selected.filter((item) => item !== option.id) : [...selected, option.id])}><span className={styles.cabinCode}>{option.code}</span><span>{option.name}</span><Check size={15} weight="bold" /></button>;
   })}<p>Select one or more cabins. Roam compares each separately.</p></div>}</div>;
 }
 
-function SimpleField({ icon, title, value, options, open, onToggle, onChange }: { icon: React.ReactNode; title: string; value: string; options: readonly string[]; open: boolean; onToggle: () => void; onChange: (value: string) => void }) {
-  return <div className={styles.fieldWrap} data-popover><FieldButton icon={icon} title={title} value={value} open={open} onClick={onToggle} />{open && <div className={styles.fieldMenu}>{options.map((option) => <button key={option} className={option === value ? styles.selectedOption : ""} onClick={() => onChange(option)}>{option}<Check size={15} weight="bold" /></button>)}</div>}</div>;
+function TravelerStepper({ count, onChange }: { count: number; onChange: (count: number) => void }) {
+  return <div className={styles.travelerField} aria-label="Travelers">
+    <span className={styles.fieldIcon}><User size={23} /></span>
+    <span className={styles.fieldCopy}><small>Travelers</small><strong>{travelerLabel(count)}</strong></span>
+    <div className={styles.travelerControls}>
+      <button aria-label="Remove traveler" disabled={count <= 1} onClick={() => onChange(count - 1)}><Minus size={15} weight="bold" /></button>
+      <output aria-live="polite">{count}</output>
+      <button aria-label="Add traveler" disabled={count >= 9} onClick={() => onChange(count + 1)}><Plus size={15} weight="bold" /></button>
+    </div>
+  </div>;
 }
 
 function PointsPicker({ value, selectedCards, selectedPrograms, cardBalances, programBalances, open, onToggle, onToggleCard, onToggleProgram, onCardBalance, onProgramBalance, onClear }: {
@@ -438,23 +598,53 @@ function FlightFiltersModal({ filters, availableCabins, availablePrograms, resul
   </div>;
 }
 
-function BookingModal({ flight, onClose }: { flight: FlightRecommendation; onClose: () => void }) {
-  const program = flight.program.label;
+function BookingModal({ flight, travelers, onClose }: { flight: FlightRecommendation; travelers: number; onClose: () => void }) {
+  const carrier = flight.carriers.join(" · ") || "Carrier to confirm";
+  const flightNumbers = flight.flightNumbers.join(" · ") || "To confirm";
+  const aircraft = flight.aircraft.join(" · ") || "To confirm";
+  const stopsLabel = flight.direct ? "Nonstop" : flight.stops != null ? `${flight.stops} stop${flight.stops === 1 ? "" : "s"}` : "Connection";
+  const programName = bookingProgramName(flight.program.id, flight.program.label);
+  const bookingUrl = bookingUrlForFlight({ program: flight.program.id, origin: flight.origin, destination: flight.destination, date: flight.date, cabin: flight.cabin });
 
   return <div className={styles.modalBackdrop} role="presentation" onMouseDown={onClose}>
-    <section className={styles.modal} role="dialog" aria-modal="true" aria-label="Booking steps" onMouseDown={(event) => event.stopPropagation()}>
-      <button className={styles.modalClose} aria-label="Close booking steps" onClick={onClose}><X size={17} /></button>
-      <p className={styles.modalEyebrow}>Recommended award itinerary</p>
-      <h2>{flight.carriers[0] ?? "Award flight"} {formatCabin(flight.cabin)}</h2>
-      <div className={styles.modalRoute}><strong>{flight.origin} → {flight.destination}</strong><span>{formatAgentDate(flight.date)} · {flight.stops === 0 ? "Nonstop" : `${flight.stops} stop${flight.stops === 1 ? "" : "s"}`}{flight.connections?.length ? ` via ${formatConnections(flight.connections)}` : ""}</span></div>
-      <div className={styles.modalPrice}>{flight.miles.toLocaleString()} points {flight.taxes ? `+ ${formatTaxes(flight.taxes.amount, flight.taxes.currency)}` : ""}<span>Book through {program}</span></div>
+    <section className={`${styles.modal} ${styles.itineraryModal}`} role="dialog" aria-modal="true" aria-labelledby="itinerary-modal-title" onMouseDown={(event) => event.stopPropagation()}>
+      <button className={styles.modalClose} aria-label="Close itinerary review" onClick={onClose}><X size={17} /></button>
+      <p className={styles.modalEyebrow}>Recommendation #{flight.rank} · Award itinerary</p>
+      <div className={styles.itineraryHeading}>
+        <AirlineLogo code={flight.carriers[0] ?? "?"} name={flight.carriers[0] ?? "Airline"} size={48} />
+        <div><h2 id="itinerary-modal-title">{flight.origin} → {flight.destination}</h2><p>{carrier} · {formatCabin(flight.cabin)}</p></div>
+      </div>
+
+      <div className={styles.itineraryPrice}>
+        <div><small>Points</small><strong>{flight.miles.toLocaleString()}</strong><span>per traveler</span></div>
+        <div><small>Taxes &amp; fees</small><strong>{flight.taxes ? formatTaxes(flight.taxes.amount, flight.taxes.currency) : "To confirm"}</strong><span>per traveler</span></div>
+        <div><small>Book through</small><strong>{programName}</strong><span>{travelers} traveler{travelers === 1 ? "" : "s"}</span></div>
+      </div>
+
+      <div className={styles.itineraryDetails}>
+        <div><small>Date</small><strong>{formatAgentDate(flight.date)}</strong></div>
+        <div><small>Schedule</small><strong>{formatSchedule(flight.departsAt, flight.arrivesAt)}</strong></div>
+        <div><small>Duration</small><strong>{formatItineraryDuration(flight)}</strong></div>
+        <div><small>Stops</small><strong>{stopsLabel}</strong></div>
+        <div><small>Flight number{flight.flightNumbers.length === 1 ? "" : "s"}</small><strong>{flightNumbers}</strong></div>
+        <div><small>Aircraft</small><strong>{aircraft}</strong></div>
+      </div>
+
+      {flight.connections?.length ? <div className={styles.itineraryCallout}><strong>Connection details</strong><span>{formatConnections(flight.connections)}</span></div> : null}
       {flight.positioning && <div className={styles.positioningNotice}><strong>Separate positioning required</strong><span>{[flight.positioning.before, flight.positioning.after].filter(Boolean).join(" · ")}</span><small>{flight.positioning.explanation}</small></div>}
-      <ol>
-        <li><span>1</span><div><strong>Confirm the seats</strong><p>Availability is live when possible; check the award program before transferring points.</p></div></li>
-        <li><span>2</span><div><strong>Transfer points</strong><p>Move only the points needed to {program}. Transfers generally cannot be reversed.</p></div></li>
-        <li><span>3</span><div><strong>Complete booking</strong><p>Finish the reservation on the program’s site and save the confirmation number.</p></div></li>
-      </ol>
-      <button className={styles.planButton} onClick={onClose}>Got it <ArrowRight size={18} /></button>
+
+      <div className={styles.itineraryAvailability}>
+        <div><strong>{flight.remainingSeats ? `${flight.remainingSeats} seat${flight.remainingSeats === 1 ? "" : "s"} reported available` : "Seat count must be confirmed"}</strong><span>{formatAvailabilityTimestamp(flight.refreshedAt)}</span></div>
+        <span className={styles.confidenceBadge}>{flight.confidence} confidence</span>
+      </div>
+
+      <div className={styles.itineraryReason}><strong>Why Roam recommends it</strong><p>{flight.reason}</p>{flight.scoreFactors.length > 0 && <div>{flight.scoreFactors.map((factor) => <span key={`${factor.label}-${factor.value}`}>{factor.label}: {factor.label === "Program" ? programName : factor.value}</span>)}</div>}</div>
+      <p className={styles.bookingCaution}>Confirm the award seats and final price with {programName} before transferring points. Transfers are generally irreversible.</p>
+
+      <div className={styles.itineraryActions}>
+        <button onClick={onClose}>Keep comparing</button>
+        <a href={bookingUrl} target="_blank" rel="noopener noreferrer" aria-label={`Book with ${programName} (opens in a new tab)`}>Book with {programName}<ArrowSquareOut size={17} weight="bold" /></a>
+      </div>
     </section>
   </div>;
 }
@@ -492,12 +682,11 @@ function formatAgentDate(value: string) {
   return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }).format(date);
 }
 
-function formatSchedule(departsAt?: string, arrivesAt?: string) {
-  if (!departsAt) return "Schedule pending";
-  const formatter = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", timeZone: "UTC" });
-  const depart = new Date(departsAt);
-  const arrive = arrivesAt ? new Date(arrivesAt) : null;
-  return `${formatter.format(depart)}${arrive ? ` – ${formatter.format(arrive)}` : ""}`;
+function formatAvailabilityTimestamp(value?: string) {
+  if (!value) return "Availability time not provided";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Availability time not provided";
+  return `Last checked ${new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(date)}`;
 }
 
 function toggleValue(values: string[], value: string): string[] {
@@ -505,6 +694,8 @@ function toggleValue(values: string[], value: string): string[] {
 }
 
 function digitsOnly(value: string): string { return value.replace(/\D/g, ""); }
+function travelerCountFromLabel(value: string): number { return Math.min(9, Math.max(1, Number.parseInt(value, 10) || 1)); }
+function travelerLabel(count: number): string { return `${count} traveler${count === 1 ? "" : "s"}`; }
 function decimalOnly(value: string): string {
   const cleaned = value.replace(/[^\d.]/g, "");
   const [whole, ...rest] = cleaned.split(".");
@@ -521,6 +712,48 @@ function numericBalanceRecord<T extends string>(record: Partial<Record<T, string
     return parsed != null && parsed > 0 ? [[key, Math.round(parsed)]] : [];
   }));
 }
+
+function readLastSearch(): LastSearchSnapshot | null {
+  try {
+    return parseLastSearchSnapshot(window.localStorage.getItem(LAST_SEARCH_STORAGE_KEY));
+  } catch {
+    return null;
+  }
+}
+
+function clearLastSearch() {
+  try {
+    window.localStorage.removeItem(LAST_SEARCH_STORAGE_KEY);
+    window.localStorage.setItem(CLEARED_LAST_SEARCH_STORAGE_KEY, "true");
+  } catch {
+    // Storage can be unavailable in privacy modes; clearing the visible search still succeeds.
+  }
+}
+
+function hasClearedLastSearch() {
+  try {
+    return window.localStorage.getItem(CLEARED_LAST_SEARCH_STORAGE_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function writeLastSearch(snapshot: LastSearchSnapshot) {
+  try {
+    window.localStorage.removeItem(CLEARED_LAST_SEARCH_STORAGE_KEY);
+    window.localStorage.setItem(LAST_SEARCH_STORAGE_KEY, JSON.stringify(snapshot));
+  } catch {
+    // Storage can be unavailable in privacy modes; search should still work normally.
+  }
+}
+
+function isCreditCardProgramId(id: string): id is CreditCardProgramId {
+  return CREDIT_CARD_PROGRAMS.some((program) => program.id === id);
+}
+
+function isAwardProgramId(id: string): id is AwardProgramId {
+  return AWARD_PROGRAMS.some((program) => program.id === id);
+}
 function hasEnteredBalances(...records: Array<Partial<Record<string, string>>>): boolean {
   return records.some((record) => Object.values(record).some((value) => optionalNumber(value ?? "") != null && Number(value) > 0));
 }
@@ -534,6 +767,7 @@ function toDateKey(date: Date) { return `${date.getFullYear()}-${String(date.get
 function todayAtMidnight() { const today = new Date(); return new Date(today.getFullYear(), today.getMonth(), today.getDate()); }
 function calendarDays(month: Date) { const first = new Date(month.getFullYear(), month.getMonth(), 1); const cursor = new Date(month.getFullYear(), month.getMonth(), 1 - first.getDay()); return Array.from({ length: 42 }, (_, index) => new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + index)); }
 function formatDateRange(start: string, end: string) {
+  if (!start) return "Choose dates";
   const startDate = parseDate(start);
   if (!end) return startDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
   const endDate = parseDate(end);
