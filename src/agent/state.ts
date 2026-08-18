@@ -89,25 +89,29 @@ const replace = <T>(defaultValue: () => T) => ({
 });
 
 /**
- * searchPlan's reducer. Unlike the other channels' blind `replace`, this
- * merges: a field the current turn's node output omits (undefined) keeps
- * whatever the checkpointer restored from the prior turn ("sticky" trip
- * criteria — origin, destination, dates, cabin). A field the update DOES
- * provide — including an explicit `false` or an empty array, both of which
- * are meaningful, present values, not "unset" — always wins. Per-turn
- * diagnostic fields (rationale, unresolvedPlaces, ambiguousPlaces,
- * discoveryProbes) are the opposite: they always take the update's value,
- * even when that's undefined, because a stale diagnostic from three turns
- * ago must never resurface on an unrelated turn.
+ * searchPlan's reducer.
+ *
+ * Sticky (merge — an omitted update field keeps the checkpointed value from
+ * the prior turn): origins, destinations, destinationRegion, startDate,
+ * endDate, cabins, nonstopOnly, stopPreference, programs, preferredAirlines,
+ * travelers, availablePointsByProgram, filterByPointBalances,
+ * maxTaxesFeesUsd. An explicit `false`/`0`/`[]` from the update always wins
+ * over a sticky field's carried-forward value — `??` treats only `undefined`
+ * as "the update didn't touch this."
+ *
+ * Per-turn (reset — always takes the update's value, even `undefined`, so a
+ * stale diagnostic from an earlier turn never resurfaces): rationale,
+ * unresolvedPlaces, ambiguousPlaces, discoveryProbes.
  *
  * A literal `null` update (rather than a partial object) is a deliberate
  * full reset — prepareUiSearch returns this when a UI run carries no
  * request — and bypasses merging entirely rather than throwing on
  * `update.origins`.
  */
-function mergeSearchPlan(
+export function mergeSearchPlan(
   current: SearchPlan | null,
   update: Partial<SearchPlan> | null,
+  now: () => Date = () => new Date(),
 ): SearchPlan | null {
   if (update === null) return null;
   const merged: SearchPlan = {
@@ -118,14 +122,20 @@ function mergeSearchPlan(
     endDate: update.endDate ?? current?.endDate,
     cabins: update.cabins ?? current?.cabins ?? [],
     nonstopOnly: update.nonstopOnly ?? current?.nonstopOnly ?? false,
+    stopPreference: update.stopPreference ?? current?.stopPreference,
     programs: update.programs ?? current?.programs ?? [],
+    preferredAirlines: update.preferredAirlines ?? current?.preferredAirlines,
+    travelers: update.travelers ?? current?.travelers,
+    availablePointsByProgram: update.availablePointsByProgram ?? current?.availablePointsByProgram,
+    filterByPointBalances: update.filterByPointBalances ?? current?.filterByPointBalances,
+    maxTaxesFeesUsd: update.maxTaxesFeesUsd ?? current?.maxTaxesFeesUsd,
     rationale: update.rationale,
     unresolvedPlaces: update.unresolvedPlaces,
     ambiguousPlaces: update.ambiguousPlaces,
     discoveryProbes: update.discoveryProbes,
   };
   if (!merged.startDate && !merged.endDate) {
-    const today = new Date();
+    const today = now();
     merged.startDate = today.toISOString().slice(0, 10);
     merged.endDate = new Date(today.getTime() + 60 * 86_400_000)
       .toISOString()

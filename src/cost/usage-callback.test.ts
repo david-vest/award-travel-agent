@@ -2,15 +2,6 @@
 import { describe, it, expect } from "vitest";
 import { UsageTracker } from "./usage-callback";
 
-// Minimal stand-in for the LLMResult shape the handler reads.
-const llmResult = (usage: Record<string, number>) =>
-  ({
-    generations: [[]],
-    llmOutput: {},
-    // ChatAnthropic surfaces per-generation message metadata here
-    ...{ __usage: usage },
-  }) as never;
-
 describe("UsageTracker", () => {
   it("attributes usage to the node named in metadata", () => {
     const t = new UsageTracker();

@@ -10,6 +10,7 @@
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
+    "check": "npm run lint && npm run typecheck && npm run test -- --coverage && npm run build",
     "seed": "tsx src/rag/ingest.ts",
     "record": "tsx scripts/record-fixtures.ts",
     "ingest:airports": "tsx scripts/ingest-airports.ts",
