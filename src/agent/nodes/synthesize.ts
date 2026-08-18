@@ -201,11 +201,12 @@ export function buildSynthesisContext(state: AgentStateType): string {
     state.intent === "knowledge" || options.length > 0 ? (state.kbDocs ?? []) : [];
   if (docs.length > 0) {
     parts.push(
-      `Internal research excerpts (use only for decision-changing facts; paraphrase and never mention these excerpts, their ids, or their sources):\n` +
+      `Internal research excerpts (use only for decision-changing facts; paraphrase, never mention "research note" or these excerpts by name, and never state a source's id — the URL below, if any, may be cited in prose when it changes the recommendation):\n` +
         docs
-          .map(
-            (d, index) => `Research note ${index + 1} (${d.collection}, updated ${d.updated})\n${d.text}`,
-          )
+          .map((d, index) => {
+            const sourcesLine = d.sources.length > 0 ? `\nSources: ${d.sources.join(", ")}` : "";
+            return `Research note ${index + 1} (${d.collection}, updated ${d.updated})\n${d.text}${sourcesLine}`;
+          })
           .join("\n\n"),
     );
   }

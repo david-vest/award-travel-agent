@@ -25,20 +25,37 @@ const option = (over: Partial<AwardOption> = {}): AwardOption => ({
   ...over,
 });
 
+/** Pulls out the `$or` branch matching a given top-level field, if present. */
+function orClauseFor(filter: Record<string, unknown> | undefined, field: string): unknown {
+  const clauses = (filter?.$or ?? []) as Record<string, unknown>[];
+  return clauses.find((c) => field in c)?.[field];
+}
+
 describe("buildPreFilter", () => {
-  it("filters to airlines that actually appeared in results", () => {
-    const f = buildPreFilter([option({ airlines: "NH" })]);
-    expect(f?.airlines).toEqual({ $in: ["NH"] });
+  it("[REGRESSION] ORs airlines/programs/regions together rather than ANDing them — a program-only document must not be excluded by an empty airlines match", () => {
+    // option()'s defaults populate both an airline and a program, so any
+    // realistic call here exercises the multi-facet $or shape, not a
+    // single-condition filter.
+    const f = buildPreFilter([option({ airlines: "NH", program: "aeroplan" })]);
+    expect(f).toHaveProperty("$or");
+    expect(orClauseFor(f, "airlines")).toEqual({ $in: ["NH"] });
+    expect(orClauseFor(f, "programs")).toEqual({ $in: ["aeroplan"] });
   });
 
   it("splits comma-delimited airline strings", () => {
     const f = buildPreFilter([option({ airlines: "NH, AC" })]);
-    expect(f?.airlines).toEqual({ $in: ["NH", "AC"] });
+    expect(orClauseFor(f, "airlines")).toEqual({ $in: ["NH", "AC"] });
   });
 
   it("includes programs seen in results", () => {
     const f = buildPreFilter([option({ program: "aeroplan" })]);
-    expect(f?.programs).toEqual({ $in: ["aeroplan"] });
+    expect(orClauseFor(f, "programs")).toEqual({ $in: ["aeroplan"] });
+  });
+
+  it("[REGRESSION] includes the region of the returned destinations, so a region-only seasonality document can match", () => {
+    // NRT (Tokyo) resolves to the Asia region.
+    const f = buildPreFilter([option({ destination: "NRT" })]);
+    expect(orClauseFor(f, "regions")).toEqual({ $in: ["Asia"] });
   });
 
   it("returns undefined when there are no results, so knowledge questions search everything", () => {
@@ -51,7 +68,36 @@ describe("buildPreFilter", () => {
       option({ airlines: "NH" }),
       option({ airlines: "AC" }),
     ]);
-    expect((f?.airlines as { $in: string[] }).$in.sort()).toEqual(["AC", "NH"]);
+    expect(((orClauseFor(f, "airlines") as { $in: string[] }).$in).sort()).toEqual(["AC", "NH"]);
+  });
+});
+
+/** Minimal $or/$in evaluator — enough to prove the generated filter's real matching behavior, not just its shape. */
+function matchesFilter(filter: Record<string, unknown>, doc: Record<string, unknown[]>): boolean {
+  const clauses = (filter.$or ?? [filter]) as Record<string, { $in: string[] }>[];
+  return clauses.some((clause) =>
+    Object.entries(clause).every(([field, { $in }]) => (doc[field] ?? []).some((v) => $in.includes(v as string))),
+  );
+}
+
+describe("[REGRESSION] buildPreFilter's OR semantics against real document metadata shapes", () => {
+  // A route_search for SFO->NRT on Aeroplan/NH — the filter this generates.
+  const filter = buildPreFilter([option({ airlines: "NH", program: "aeroplan", destination: "NRT" })]) as Record<string, unknown>;
+
+  it("matches a program-only document (e.g. a transfer/booking note with no airlines tagged)", () => {
+    expect(matchesFilter(filter, { airlines: [], programs: ["aeroplan"], regions: [] })).toBe(true);
+  });
+
+  it("matches an airline-only document (e.g. a products review with no program tagged)", () => {
+    expect(matchesFilter(filter, { airlines: ["NH"], programs: [], regions: [] })).toBe(true);
+  });
+
+  it("matches a region-only document (e.g. a seasonality note with neither airlines nor programs tagged)", () => {
+    expect(matchesFilter(filter, { airlines: [], programs: [], regions: ["Asia"] })).toBe(true);
+  });
+
+  it("does not match a document with none of the three facets", () => {
+    expect(matchesFilter(filter, { airlines: ["BA"], programs: ["qatar"], regions: ["Europe"] })).toBe(false);
   });
 });
 

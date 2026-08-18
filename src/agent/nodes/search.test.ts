@@ -1,5 +1,5 @@
 // src/agent/nodes/search.test.ts
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { AwardOption } from "../../tools";
 import type { AvailabilityResult, SearchResponse } from "../../tools/seats-aero/types";
 import type { AgentStateType, SearchPlan } from "../state";
@@ -48,12 +48,39 @@ import {
   regionForOrigin,
   rankOptions,
   prefersLowTaxes,
-  ENRICH_TOP_N,
   MAX_ROUTE_SEARCH_CALLS,
+  MAX_AWARD_RESULTS,
   buildPositioningAttempts,
   needsPositioningSearch,
   searchPositioningOptions,
+  getClient,
+  setSeatsAeroClientFactory,
+  resetSeatsAeroClientForTests,
 } from "./search";
+
+describe("[REGRESSION] provider client injection", () => {
+  afterEach(() => resetSeatsAeroClientForTests());
+
+  it("uses an injected client factory instead of createSeatsAeroClient's env-based default", async () => {
+    const injectedSearch = vi.fn();
+    setSeatsAeroClientFactory(() => ({
+      search: injectedSearch,
+      regionalAvailability: vi.fn(),
+      trips: vi.fn(),
+      routes: vi.fn(),
+      refresh: vi.fn(),
+      quota: () => ({ limit: 1000, remaining: 999, reset: 60 }),
+    }));
+
+    const client = await getClient();
+    await client.search({ origin_airport: "ORD", destination_airport: "NRT" });
+
+    expect(injectedSearch).toHaveBeenCalledTimes(1);
+    // The module-mocked createSeatsAeroClient's own search mock (used by
+    // every other test in this file) must not have been reached.
+    expect(searchMock).not.toHaveBeenCalled();
+  });
+});
 
 describe("filterByPointBalances", () => {
   it("uses the total trip cost and treats missing program balances as zero", () => {
@@ -203,10 +230,6 @@ describe("rankOptions", () => {
     expect(r[0].availabilityId).toBe("usd");
   });
 
-  it("enriches exactly five options", () => {
-    expect(ENRICH_TOP_N).toBe(5);
-  });
-
   it("prefers a higher-mileage, low-fee option over a lower-mileage, high-fee one even without an explicit tax preference", () => {
     const r = rankOptions([
       opt({ availabilityId: "ba", miles: 45_000, taxes: 1_000, taxesCurrency: "USD", direct: true }),
@@ -316,6 +339,25 @@ describe("searchAwards", () => {
     const result = await searchAwards(state);
 
     expect(result.awardResults).toHaveLength(2);
+  });
+
+  it("[REGRESSION] bounds awardResults at MAX_AWARD_RESULTS, keeping the cheapest-ranked options", async () => {
+    const many = Array.from({ length: 300 }, (_, i) =>
+      multiCabinRecord({ ID: `r${i}`, RouteID: `route-${i}`, JMileageCost: String(60_000 + i * 100), WAvailable: false, FAvailable: false }),
+    );
+    searchMock.mockResolvedValueOnce(searchResponse(many));
+
+    const state = {
+      searchPlan: { ...basePlan, cabins: ["business"] },
+      intent: "route_search",
+    } as unknown as AgentStateType;
+
+    const result = await searchAwards(state);
+
+    expect(result.awardResults).toHaveLength(MAX_AWARD_RESULTS);
+    // Ranked cheapest-first — the cheapest 200 of the 300 generated must survive.
+    expect(result.awardResults?.[0].availabilityId).toBe("r0");
+    expect(result.awardResults?.every((o) => o.miles <= 60_000 + 199 * 100)).toBe(true);
   });
 
   it("passes the USD fee ceiling in cents and removes awards above entered balances", async () => {
@@ -540,17 +582,23 @@ describe("bounded positioning fallback", () => {
     expect(result.positioningSearchComplete).toBe(true);
   });
 
-  it("stops broadening once a fallback returns several reasonable options", async () => {
-    searchMock.mockResolvedValueOnce(searchResponse([
+  it("[REGRESSION] does not stop broadening on a shallow miles-only match — enrichment hasn't run yet to judge duration, stops, or fees", async () => {
+    // The first broadening attempt returns three options that pass the
+    // miles-only "reasonable" check, but none of them have been enriched
+    // with real duration/stop/fee data yet (enrichment only runs after the
+    // full positioning ladder completes) — the ladder must not treat this
+    // shallow pass as "good enough" and stop early.
+    searchMock.mockResolvedValue(searchResponse([
       multiCabinRecord({ ID: "one", JMileageCost: "70000" }),
       multiCabinRecord({ ID: "two", JMileageCost: "80000" }),
       multiCabinRecord({ ID: "three", JMileageCost: "90000" }),
     ]));
-    await searchPositioningOptions({
+    const result = await searchPositioningOptions({
       intent: "route_search", searchPlan: fukuokaPlan, awardResults: [],
       searchAttempts: [{ tier: "exact", origins: ["ORD"], destinations: ["FUK"], reason: "Exact", resultCount: 0 }],
     } as unknown as AgentStateType);
-    expect(searchMock).toHaveBeenCalledTimes(1);
+    expect(searchMock).toHaveBeenCalledTimes(MAX_ROUTE_SEARCH_CALLS - 1);
+    expect(result.searchAttempts).toHaveLength(MAX_ROUTE_SEARCH_CALLS);
   });
 
   it("broadens when exact options are expensive, high-fee, or insufficiently verified", () => {

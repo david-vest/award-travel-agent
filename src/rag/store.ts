@@ -55,9 +55,12 @@ export async function mongoClient(): Promise<MongoClient> {
   return cachedClient;
 }
 
-export async function getVectorStore(): Promise<MongoDBAtlasVectorSearch> {
+/** `collectionName` defaults to the live KB — ingest.ts overrides it to target a staging collection while re-embedding. */
+export async function getVectorStore(
+  collectionName: string = KB_COLLECTION,
+): Promise<MongoDBAtlasVectorSearch> {
   const client = await mongoClient();
-  const collection = client.db(DB_NAME).collection(KB_COLLECTION);
+  const collection = client.db(DB_NAME).collection(collectionName);
 
   return new MongoDBAtlasVectorSearch(embeddings(), {
     collection,

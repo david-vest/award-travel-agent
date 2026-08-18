@@ -1,5 +1,8 @@
 import type { AwardOption, TripSummary } from "../tools";
 import { getVectorStore } from "./store";
+// A pure IATA→Region lookup despite living in the search node — reused here
+// rather than duplicated so the two stay in sync.
+import { regionForOrigin } from "../agent/nodes/search";
 
 export type RetrievedDoc = {
   id: string;
@@ -22,9 +25,17 @@ function airlinesIn(options: AwardOption[]): string[] {
 }
 
 /**
- * Restricts the vector search to documents about carriers and programs that
- * actually came back from the API. This is the payoff for retrieving *after*
- * searching — before the search, none of this is known.
+ * Restricts the vector search to documents relevant to what actually came
+ * back from the API — a carrier, a program, or a destination's region. This
+ * is the payoff for retrieving *after* searching — before the search, none
+ * of this is known.
+ *
+ * The three facets are ORed, not ANDed: a document tagged with only one
+ * facet (e.g. a program-only transfer note, or a region-only seasonality
+ * note with no airlines/programs at all) must still match on that facet
+ * alone. ANDing them — the original implementation — silently excluded any
+ * document that didn't carry every facet, which in practice meant most of
+ * the knowledge base whenever a search actually returned results.
  *
  * Returns undefined when there are no results (a pure knowledge question), so
  * the whole KB stays searchable in that case.
@@ -36,12 +47,16 @@ export function buildPreFilter(
 
   const airlines = airlinesIn(options);
   const programs = uniq(options.map((o) => o.program.toLowerCase()));
+  const regions = uniq(options.map((o) => regionForOrigin(o.destination)));
 
-  const filter: Record<string, unknown> = {};
-  if (airlines.length > 0) filter.airlines = { $in: airlines };
-  if (programs.length > 0) filter.programs = { $in: programs };
+  const clauses: Record<string, unknown>[] = [];
+  if (airlines.length > 0) clauses.push({ airlines: { $in: airlines } });
+  if (programs.length > 0) clauses.push({ programs: { $in: programs } });
+  if (regions.length > 0) clauses.push({ regions: { $in: regions } });
 
-  return Object.keys(filter).length > 0 ? filter : undefined;
+  if (clauses.length === 0) return undefined;
+  if (clauses.length === 1) return clauses[0];
+  return { $or: clauses };
 }
 
 /**

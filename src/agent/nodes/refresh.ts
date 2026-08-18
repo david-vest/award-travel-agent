@@ -1,4 +1,5 @@
 // src/agent/nodes/refresh.ts
+import type { RunnableConfig } from "@langchain/core/runnables";
 import type { AwardOption } from "../../tools";
 import type { AgentStateType, SearchPlan } from "../state";
 import {
@@ -105,6 +106,26 @@ export function staleOptionIds(
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
+ * Resolves after `ms`, or immediately if `signal` aborts first — so a client
+ * disconnect mid-poll doesn't leave the loop waiting out a full 10s interval
+ * for nothing. Falls back to a plain sleep when no signal is given.
+ */
+function sleepOrAbort(ms: number, signal?: AbortSignal): Promise<void> {
+  if (!signal) return sleep(ms).then(() => undefined);
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    function onAbort() {
+      clearTimeout(timer);
+      resolve();
+    }
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+/**
  * Statuses that mean the provider actually vouches for the data as current —
  * either it was already fresh, or the refresh job completed and replaced it.
  * Anything else (failed, not_found, not_refreshable, skipped_outage,
@@ -125,10 +146,13 @@ function isConfirmed(status: string): boolean {
  */
 export async function refreshAvailability(
   state: AgentStateType,
+  config?: RunnableConfig,
 ): Promise<Partial<AgentStateType>> {
   const options = state.awardResults ?? [];
   const ids = staleOptionIds(options);
   if (ids.length === 0) return {};
+  const signal = config?.signal;
+  if (signal?.aborted) return {};
 
   const client = await getClient();
   const deadline = Date.now() + POLL_CEILING_MS;
@@ -141,8 +165,9 @@ export async function refreshAvailability(
       attempt < POLL_ATTEMPTS && !response.complete && Date.now() < deadline;
       attempt++
     ) {
-      await sleep(POLL_INTERVAL_MS);
-      if (Date.now() >= deadline) break;
+      if (signal?.aborted) return {};
+      await sleepOrAbort(POLL_INTERVAL_MS, signal);
+      if (signal?.aborted || Date.now() >= deadline) break;
       response = await client.refresh(ids);
     }
 
@@ -151,22 +176,32 @@ export async function refreshAvailability(
       return {};
     }
 
-    // Every item already current: nothing changed, but freshness is confirmed.
+    const confirmedAt = new Date().toISOString();
+    const confirmedIds = new Set(
+      response.items.filter((i) => isConfirmed(i.status)).map((i) => i.id),
+    );
+
+    // Every item already current: nothing to refetch, but stamp the specific
+    // ids the provider vouched for — not every option in the result set.
     const allFresh = response.items.every((i) => i.status === "fresh");
     if (allFresh) {
-      return { refreshedAt: new Date().toISOString() };
+      return {
+        awardResults: options.map((o) =>
+          confirmedIds.has(o.availabilityId) ? { ...o, refreshConfirmedAt: confirmedAt } : o,
+        ),
+        refreshedAt: confirmedAt,
+      };
     }
 
     // Nothing the provider actually vouches for (all failed, not found,
     // skipped, or quota-starved) — don't claim a re-confirmation happened.
-    const anyConfirmed = response.items.some((i) => isConfirmed(i.status));
-    if (!anyConfirmed) {
+    if (confirmedIds.size === 0) {
       return {};
     }
 
     return {
-      awardResults: await refetch(state, ids, options),
-      refreshedAt: new Date().toISOString(),
+      awardResults: await refetch(state, ids, options, confirmedAt, confirmedIds),
+      refreshedAt: confirmedAt,
     };
   } catch {
     // Quota exhausted, cooldown, outage — proceed with what we already have.
@@ -179,6 +214,8 @@ async function refetch(
   state: AgentStateType,
   refreshedIds: string[],
   previous: AwardOption[],
+  confirmedAt: string,
+  confirmedIds: Set<string>,
 ): Promise<AwardOption[]> {
   const plan = state.searchPlan;
   if (!plan) return previous;
@@ -213,12 +250,18 @@ async function refetch(
     const updatedIds = new Set(updated.map((o) => o.availabilityId));
 
     // Replace only what we asked to refresh; leave the rest as-is so options
-    // outside the top-N do not silently change under the user.
+    // outside the top-N do not silently change under the user. Only ids the
+    // refresh endpoint itself vouched for (confirmedIds) get stamped — a
+    // record that merely reappeared in the general re-search, without the
+    // refresh endpoint confirming it, is not the same as a verified refresh.
     const untouched = previous.filter((o) => !refreshed.has(o.availabilityId));
-    const replacements = updated.filter((o) => refreshed.has(o.availabilityId));
+    const replacements = updated
+      .filter((o) => refreshed.has(o.availabilityId))
+      .map((o) => (confirmedIds.has(o.availabilityId) ? { ...o, refreshConfirmedAt: confirmedAt } : o));
     // An id we asked to refresh but that came back with no matching record
     // (sold out, expired, or the refresh failed for it specifically) — keep
-    // the stale original instead of silently dropping the option.
+    // the stale original instead of silently dropping the option. Never
+    // stamped: nothing was actually confirmed for it.
     const missing = previous.filter(
       (o) => refreshed.has(o.availabilityId) && !updatedIds.has(o.availabilityId),
     );

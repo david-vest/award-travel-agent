@@ -73,6 +73,11 @@ export async function rankRecommendations(
     const trip = tripByAvailability.get(option.availabilityId);
     const taxes = effectiveTaxes(option, trip);
     if (plan?.maxTaxesFeesUsd != null && taxes != null && taxes.currency === "USD" && taxes.amount > plan.maxTaxesFeesUsd) return null;
+    const seats = option.remainingSeats ?? trip?.remainingSeats;
+    // Hard exclusion, not a score penalty — an unknown seat count is not
+    // evidence of unavailability (many programs don't report one at all),
+    // but a KNOWN count below the traveler party size genuinely can't be booked.
+    if (seats != null && plan?.travelers && seats < plan.travelers) return null;
     const carriers = primaryCarrier(option, trip);
     const factors: FlightRecommendation["scoreFactors"] = [{ label: "Points", value: `${option.miles.toLocaleString()} miles` }];
     if (taxes != null) factors.push({ label: "Taxes & fees", value: taxes.currency === "USD" ? formatUsd(taxes.amount) : `${taxes.amount} ${taxes.currency}` });
@@ -106,15 +111,9 @@ export async function rankRecommendations(
       factors.push({ label: "Airline", value: "Preferred carrier" });
     }
 
-    const seats = option.remainingSeats ?? trip?.remainingSeats;
     if (seats != null && plan?.travelers) {
-      if (seats >= plan.travelers) {
-        score -= 800;
-        factors.push({ label: "Seats", value: `${seats} available` });
-      } else {
-        score += 500_000;
-        factors.push({ label: "Seats", value: `${seats} known — fewer than ${plan.travelers} travelers` });
-      }
+      score -= 800;
+      factors.push({ label: "Seats", value: `${seats} available` });
     }
 
     const program = awardProgramForSource(option.program);
@@ -153,7 +152,7 @@ export async function rankRecommendations(
       durationMinutes: trip?.durationMinutes,
       flightNumbers: trip?.flightNumbers ?? [],
       aircraft: trip?.aircraft ?? [],
-      refreshedAt: state.refreshedAt ?? option.updatedAt,
+      refreshedAt: option.refreshConfirmedAt ?? option.updatedAt,
       reason: leading
         ? `Best overall fit for your selected points, cabin, and stop preferences.`
         : `A verified alternative with ${option.direct ? "a nonstop route" : "a competitive connecting itinerary"}.`,

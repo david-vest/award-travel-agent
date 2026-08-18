@@ -16,6 +16,8 @@ export type AwardOption = {
   airlines: string;
   remainingSeats?: number;
   updatedAt?: string;
+  /** Set only on options a refresh operation actually re-confirmed as current — never a global, all-or-nothing stamp. */
+  refreshConfirmedAt?: string;
   /** How far the bounded search ladder broadened beyond the requested route. */
   searchTier?: "exact" | "destination_gateway" | "country_pair" | "region_pair";
   searchReason?: string;

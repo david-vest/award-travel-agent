@@ -70,4 +70,22 @@ describe("frontmatterSchema", () => {
       }),
     ).toThrow();
   });
+
+  it("allows a program id that isn't seats.aero-searchable (e.g. a card transfer partner our search tool can't query)", () => {
+    // knowledge/transfers/*.md legitimately lists every real transfer
+    // partner a card has, including airlines seats.aero doesn't track
+    // (British Airways, Iberia, ANA, ...) — restricting `programs` to
+    // MILEAGE_PROGRAMS would delete accurate content, so this stays
+    // free-form. What actually matters is that identifiers matching a
+    // *searchable* program are spelled consistently — see
+    // knowledge-programs-consistency.test.ts.
+    expect(() =>
+      frontmatterSchema.parse({
+        id: "x",
+        collection: "transfers",
+        updated: "2026-06-01",
+        programs: ["britishairways", "aeroplan"],
+      }),
+    ).not.toThrow();
+  });
 });

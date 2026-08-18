@@ -1,7 +1,7 @@
 ---
 id: amex-mr-transfer-partners
 collection: transfers
-programs: [delta, ana, aeroplan, flyingblue, lifemiles, britishairways, iberia, cathaypacific, emirates, jetblue, qantas, qatarairways, singapore, virginatlantic]
+programs: [delta, ana, aeroplan, flyingblue, lifemiles, britishairways, iberia, cathaypacific, emirates, jetblue, qantas, qatar, singapore, virginatlantic]
 updated: 2026-08-13
 sources: ["https://global.americanexpress.com/rewards/transfer", "https://www.americanexpress.com/content/dam/amex/us/rewards/membership-rewards/mr-updates-final-july-2025.pdf"]
 ---
