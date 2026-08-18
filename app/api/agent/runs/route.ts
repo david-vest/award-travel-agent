@@ -73,6 +73,7 @@ export async function POST(request: Request) {
       const send = (event: AgentEvent) => controller.enqueue(eventPayload(event));
       let recommendations: FlightRecommendation[] = [];
       let answer = "";
+      let searchExecuted = Boolean(body.request);
       const stageStartedAt = new Map<AgentStage, number>();
       const stageStatus = new Map<AgentStage, "active" | "complete">();
 
@@ -134,11 +135,13 @@ export async function POST(request: Request) {
               activateStage("search", "Resolved the requested places to searchable commercial airports.");
             }
             if (node === "search_awards") {
+              searchExecuted = true;
               const optionCount = Array.isArray(data.awardResults) ? data.awardResults.length : 0;
               completeStage("search", `The exact-route search returned ${optionCount.toLocaleString()} award option${optionCount === 1 ? "" : "s"}.`);
               activateStage("rules", "Checking itinerary details and whether a broader gateway search is worthwhile.");
             }
             if (node === "search_positioning") {
+              searchExecuted = true;
               const attempts = Array.isArray(data.searchAttempts) ? data.searchAttempts.length : 0;
               const optionCount = Array.isArray(data.awardResults) ? data.awardResults.length : 0;
               activateStage("rules", `Expanded to ${attempts || "additional"} route scope${attempts === 1 ? "" : "s"}; validating ${optionCount.toLocaleString()} candidate options.`);
@@ -153,9 +156,13 @@ export async function POST(request: Request) {
               }
               const documentCount = Array.isArray(data.kbDocs) ? data.kbDocs.length : 0;
               completeStage("rules", `Cross-checked ${documentCount.toLocaleString()} relevant program and booking note${documentCount === 1 ? "" : "s"}.`);
-              activateStage("rank", "Applying the deterministic value model to the verified options.");
+              if (searchExecuted) {
+                activateStage("rank", "Applying the deterministic value model to the verified options.");
+              } else {
+                completeStage("rank", "Kept verified flight recommendations.");
+              }
             }
-            if (Array.isArray(data.recommendations)) {
+            if (Array.isArray(data.recommendations) && searchExecuted) {
               recommendations = data.recommendations as FlightRecommendation[];
               send({ type: "results", recommendations });
               if (node === "rank_recommendations") {
@@ -179,8 +186,16 @@ export async function POST(request: Request) {
               retryable: true,
             });
           } else {
-            if (stageStatus.get("rank") !== "complete") completeStage("rank", `Ranked ${recommendations.length.toLocaleString()} option${recommendations.length === 1 ? "" : "s"}.`);
-            send({ type: "complete", answer, recommendations });
+            if (searchExecuted && stageStatus.get("rank") !== "complete") {
+              completeStage("rank", `Ranked ${recommendations.length.toLocaleString()} option${recommendations.length === 1 ? "" : "s"}.`);
+            } else if (!searchExecuted && stageStatus.get("rank") !== "complete") {
+              completeStage("rank", "Kept verified flight recommendations.");
+            }
+            send({
+              type: "complete",
+              answer,
+              ...(searchExecuted ? { recommendations, searchRan: true } : { searchRan: false }),
+            });
           }
         }
       } catch (error) {

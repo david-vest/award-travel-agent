@@ -37,7 +37,9 @@ export function useAgentRun() {
     } else if (event.type === "answer_delta") {
       setAnswer(event.text);
     } else if (event.type === "complete") {
-      setRecommendations(event.recommendations);
+      if (event.recommendations !== undefined) {
+        setRecommendations(event.recommendations);
+      }
       setAnswer(event.answer);
       setStatus("complete");
     } else if (event.type === "error") {

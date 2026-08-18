@@ -103,5 +103,5 @@ export type AgentEvent =
   | { type: "stage"; stage: AgentStage; status: "active" | "complete"; detail?: string; elapsedMs?: number }
   | { type: "results"; recommendations: FlightRecommendation[] }
   | { type: "answer_delta"; text: string }
-  | { type: "complete"; answer: string; recommendations: FlightRecommendation[]; refreshedAt?: string }
+  | { type: "complete"; answer: string; recommendations?: FlightRecommendation[]; searchRan?: boolean; refreshedAt?: string }
   | { type: "error"; code: string; message: string; retryable: boolean };
