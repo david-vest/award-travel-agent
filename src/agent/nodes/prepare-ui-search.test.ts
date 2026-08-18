@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
+import type { BaseChannel, BinaryOperatorAggregate } from "@langchain/langgraph";
 import type { TripRequest } from "../../contracts/travel-search";
-import type { AgentStateType } from "../state";
+import { AgentState, type AgentStateType, type SearchPlan } from "../state";
 import { availablePointsByProgram, describeTripRequest, prepareUiSearch } from "./prepare-ui-search";
+
+const asAggregate = <V, U>(channel: BaseChannel<V, U>) =>
+  channel as unknown as BinaryOperatorAggregate<V, U>;
 
 const request: TripRequest = {
   origin: { code: "SFO", airports: ["SFO"], custom: false },
@@ -30,6 +34,22 @@ describe("prepareUiSearch", () => {
     });
     expect(result.awardResults).toEqual([]);
     expect(result.recommendations).toEqual([]);
+  });
+
+  it("[REGRESSION] every UI constraint survives being written through the actual state reducer", async () => {
+    const result = await prepareUiSearch({ tripRequest: request } as AgentStateType);
+    const plan = asAggregate(AgentState.spec.searchPlan).operator(
+      null,
+      result.searchPlan as Partial<SearchPlan>,
+    )!;
+    // A later, unrelated follow-up (e.g. "actually nonstop only") must not
+    // wipe out the constraints this turn established.
+    const afterFollowUp = asAggregate(AgentState.spec.searchPlan).operator(plan, {
+      nonstopOnly: true,
+    })!;
+    expect(afterFollowUp.stopPreference).toBe("nonstop");
+    expect(afterFollowUp.preferredAirlines).toEqual(["NH"]);
+    expect(afterFollowUp.travelers).toBe(2);
   });
 
   it("writes the selected scope into a readable thread message", () => {

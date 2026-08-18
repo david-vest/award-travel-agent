@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { HumanMessage, AIMessage } from "@langchain/core/messages";
 import type { BaseChannel, BinaryOperatorAggregate } from "@langchain/langgraph";
-import { AgentState, type SearchPlan } from "./state";
+import { AgentState, mergeSearchPlan, type SearchPlan } from "./state";
 
 // `Annotation.Root(...).spec[key]` is typed as `BaseChannel`, but at runtime
 // (@langchain/langgraph@1.4.9) it is always the BinaryOperatorAggregate
@@ -110,5 +110,41 @@ describe("searchPlan merge reducer", () => {
     const merged = asAggregate(AgentState.spec.searchPlan).operator(base, {})!;
     expect(merged.startDate).toBe("2026-09-15");
     expect(merged.endDate).toBe("2026-09-18");
+  });
+
+  it("[REGRESSION] carries forward every sticky field the update omits, not just the ones already merged", () => {
+    const fullBase: SearchPlan = {
+      ...base,
+      stopPreference: "nonstop",
+      preferredAirlines: ["NH"],
+      travelers: 2,
+      availablePointsByProgram: { united: 90_000 },
+      filterByPointBalances: true,
+      maxTaxesFeesUsd: 150,
+    };
+    const merged = asAggregate(AgentState.spec.searchPlan).operator(fullBase, {
+      origins: ["JFK"],
+    })!;
+    expect(merged.stopPreference).toBe("nonstop");
+    expect(merged.preferredAirlines).toEqual(["NH"]);
+    expect(merged.travelers).toBe(2);
+    expect(merged.availablePointsByProgram).toEqual({ united: 90_000 });
+    expect(merged.filterByPointBalances).toBe(true);
+    expect(merged.maxTaxesFeesUsd).toBe(150);
+  });
+
+  it("overwrites a sticky field with an explicit falsy/zero update value", () => {
+    const merged = asAggregate(AgentState.spec.searchPlan).operator(
+      { ...base, filterByPointBalances: true, travelers: 4 },
+      { filterByPointBalances: false, travelers: 1 },
+    )!;
+    expect(merged.filterByPointBalances).toBe(false);
+    expect(merged.travelers).toBe(1);
+  });
+
+  it("accepts an injected clock instead of requiring vi.useFakeTimers", () => {
+    const merged = mergeSearchPlan(null, { origins: ["ORD"] }, () => new Date("2026-01-01T00:00:00Z"))!;
+    expect(merged.startDate).toBe("2026-01-01");
+    expect(merged.endDate).toBe("2026-03-02");
   });
 });

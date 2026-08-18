@@ -1,27 +1,38 @@
 import { z } from "zod";
+import { AWARD_PROGRAMS, CREDIT_CARD_PROGRAMS, type AwardProgramId, type CreditCardProgramId } from "../domain/programs";
 
 export const CABIN_VALUES = ["economy", "premium", "business", "first"] as const;
 export const STOP_PREFERENCES = ["nonstop", "up_to_one", "any"] as const;
 
+const AWARD_PROGRAM_IDS = AWARD_PROGRAMS.map((p) => p.id) as [AwardProgramId, ...AwardProgramId[]];
+const CREDIT_CARD_PROGRAM_IDS = CREDIT_CARD_PROGRAMS.map((p) => p.id) as [CreditCardProgramId, ...CreditCardProgramId[]];
+
 const tripLocationSchema = z.object({
   code: z.string().trim().min(1).max(100),
-  airports: z.array(z.string().length(3)).default([]),
+  airports: z.array(z.string().length(3)).max(20).default([]),
   /** True only for a free-form place the advisor explicitly asks Roam to resolve. */
   custom: z.boolean().default(false),
 });
 
+/** Rejects a syntactically-shaped but non-existent date, e.g. 2026-02-30. */
+const calendarDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((value) => {
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}, { message: "Must be a real calendar date." });
+
 export const tripRequestSchema = z.object({
   origin: tripLocationSchema,
-  destinations: z.array(tripLocationSchema).min(1),
-  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  destinations: z.array(tripLocationSchema).min(1).max(20),
+  startDate: calendarDate,
+  endDate: calendarDate,
   flexDays: z.number().int().min(0).max(14),
   cabins: z.array(z.enum(CABIN_VALUES)).min(1),
   travelers: z.number().int().min(1).max(9),
   stopPreference: z.enum(STOP_PREFERENCES),
-  preferredAirlines: z.array(z.string().min(2).max(3)).default([]),
-  creditCardPrograms: z.array(z.string()).default([]),
-  awardPrograms: z.array(z.string()).default([]),
+  preferredAirlines: z.array(z.string().min(2).max(3)).max(20).default([]),
+  creditCardPrograms: z.array(z.enum(CREDIT_CARD_PROGRAM_IDS)).max(10).default([]),
+  awardPrograms: z.array(z.enum(AWARD_PROGRAM_IDS)).max(20).default([]),
   pointBalances: z.object({
     creditCards: z.record(z.string(), z.number().int().nonnegative()).default({}),
     awardPrograms: z.record(z.string(), z.number().int().nonnegative()).default({}),
@@ -29,6 +40,10 @@ export const tripRequestSchema = z.object({
   /** Per-traveler cash ceiling. Seats.aero's max_fees parameter uses USD cents. */
   maxTaxesFeesUsd: z.number().nonnegative().max(100_000).optional(),
   notes: z.string().trim().max(1_000).optional(),
+}).superRefine((value, ctx) => {
+  if (value.endDate < value.startDate) {
+    ctx.addIssue({ code: "custom", path: ["endDate"], message: "endDate must not be before startDate." });
+  }
 });
 
 export type TripRequest = z.infer<typeof tripRequestSchema>;
@@ -38,7 +53,12 @@ export const agentRunRequestSchema = z.object({
   request: tripRequestSchema.optional(),
   message: z.string().trim().min(1).max(2_000).optional(),
 }).superRefine((value, ctx) => {
-  if (!value.request && !value.message) ctx.addIssue({ code: "custom", message: "A trip request or follow-up message is required." });
+  if (!value.request && !value.message) {
+    ctx.addIssue({ code: "custom", message: "A trip request or follow-up message is required." });
+  }
+  if (value.request && value.message) {
+    ctx.addIssue({ code: "custom", message: "Provide either a structured trip request or a follow-up message, not both." });
+  }
 });
 
 export type AgentRunRequest = z.infer<typeof agentRunRequestSchema>;
