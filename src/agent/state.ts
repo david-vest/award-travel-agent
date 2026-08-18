@@ -170,6 +170,15 @@ export const AgentState = Annotation.Root({
 
   draft: Annotation<string | null>(replace<string | null>(() => null)),
   violations: Annotation<Violation[]>(replace<Violation[]>(() => [])),
+  /**
+   * Per-turn record of a dependency that failed and was silently degraded
+   * around (e.g. refresh, RAG retrieval) rather than failing the turn.
+   * guard.ts resets this to [] on every turn (guard_input is the graph's
+   * entry node); a node that degrades appends its own reason to whatever
+   * the current turn already has, so the trace/UI can distinguish "nothing
+   * was wrong" from "a dependency failed and this answer is degraded."
+   */
+  degradedReasons: Annotation<string[]>(replace<string[]>(() => [])),
 
   /** Additive so the retry budget can simply be compared against a limit. */
   revisionCount: Annotation<number>({

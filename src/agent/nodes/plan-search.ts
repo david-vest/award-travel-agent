@@ -85,6 +85,25 @@ export function buildPlannerContext(
   return lines.join("\n");
 }
 
+/**
+ * Overridable so the compiled graph's plan_search node (graph.ts, which
+ * always calls planSearch with a fixed argument count and can't itself carry
+ * per-invocation state) can be pinned to a frozen clock in evals, the same
+ * way search.ts's provider factory is overridable. Unset by default, so the
+ * graph's real request path is unaffected — planSearch's own `now` default
+ * parameter still applies when this is undefined.
+ */
+let clockOverride: (() => Date) | undefined;
+
+export function setPlanSearchClock(fn: (() => Date) | undefined): void {
+  clockOverride = fn;
+}
+
+/** Read by graph.ts's node wrapper; not meant for direct use outside this pair. */
+export function currentPlanSearchClock(): (() => Date) | undefined {
+  return clockOverride;
+}
+
 export async function planSearch(
   state: AgentStateType,
   now: Date = new Date(),

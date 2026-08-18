@@ -172,8 +172,11 @@ export async function refreshAvailability(
     }
 
     if (!response.complete) {
-      // Timed out. Keep the stale data and say nothing was re-confirmed.
-      return {};
+      // Aborted (client disconnect / execution deadline) is an intentional
+      // cancellation, not a dependency failure — don't tag it as degraded.
+      if (signal?.aborted) return {};
+      // Genuinely timed out. Keep the stale data and say nothing was re-confirmed.
+      return { degradedReasons: [...(state.degradedReasons ?? []), "refresh_timed_out"] };
     }
 
     const confirmedAt = new Date().toISOString();
@@ -196,7 +199,7 @@ export async function refreshAvailability(
     // Nothing the provider actually vouches for (all failed, not found,
     // skipped, or quota-starved) — don't claim a re-confirmation happened.
     if (confirmedIds.size === 0) {
-      return {};
+      return { degradedReasons: [...(state.degradedReasons ?? []), "refresh_unconfirmed"] };
     }
 
     return {
@@ -205,7 +208,7 @@ export async function refreshAvailability(
     };
   } catch {
     // Quota exhausted, cooldown, outage — proceed with what we already have.
-    return {};
+    return { degradedReasons: [...(state.degradedReasons ?? []), "refresh_outage"] };
   }
 }
 

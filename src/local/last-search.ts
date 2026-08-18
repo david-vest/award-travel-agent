@@ -1,5 +1,22 @@
 import type { AgentStage, FlightRecommendation } from "../contracts/travel-search";
 
+/**
+ * Unencrypted browser localStorage, scoped to the "resume my last search"
+ * UX feature. What's stored: the full search form (including point
+ * balances — creditCardBalances/awardProgramBalances — and trip dates), the
+ * last run's flight recommendations, and recent chat messages. Every field
+ * here is read back on load to repopulate the form; nothing is stored
+ * speculatively.
+ *
+ * There is no authentication/session system in this app (a deliberate scope
+ * decision — see docs/superpowers/plans/2026-08-17-phase-5-production-hardening.md),
+ * so there's no "clear on logout" concept, and no per-user key to encrypt
+ * this against — a device-level attacker with browser access can already
+ * read any localStorage key regardless of encryption scheme without a real
+ * key-management story. Real protection for this data requires that
+ * deferred auth/session system, not a client-side encryption layer without
+ * key management, which would be security theater.
+ */
 export const LAST_SEARCH_STORAGE_KEY = "roam:last-search:v1";
 
 export type StoredLocation = {

@@ -12,7 +12,10 @@ vi.mock("./nodes/guard", () => ({
   refuse: vi.fn(),
 }));
 vi.mock("./nodes/triage", () => ({ triage: vi.fn() }));
-vi.mock("./nodes/plan-search", () => ({ planSearch: vi.fn() }));
+vi.mock("./nodes/plan-search", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./nodes/plan-search")>();
+  return { ...actual, planSearch: vi.fn() };
+});
 vi.mock("./nodes/plan-discovery", () => ({ planDiscovery: vi.fn() }));
 vi.mock("./nodes/prepare-ui-search", () => ({ prepareUiSearch: vi.fn() }));
 vi.mock("./nodes/resolve-ui-locations", () => ({ resolveUiLocations: vi.fn() }));
@@ -25,7 +28,7 @@ vi.mock("./nodes/synthesize", () => ({ synthesize: vi.fn() }));
 import { buildGraphWithoutCheckpointer } from "./graph";
 import { guardInput, refuse } from "./nodes/guard";
 import { triage } from "./nodes/triage";
-import { planSearch } from "./nodes/plan-search";
+import { planSearch, setPlanSearchClock } from "./nodes/plan-search";
 import { planDiscovery } from "./nodes/plan-discovery";
 import { prepareUiSearch } from "./nodes/prepare-ui-search";
 import { resolveUiLocations } from "./nodes/resolve-ui-locations";
@@ -151,6 +154,33 @@ describe("graph traversal", () => {
     await invokeGraph("ORD to NRT business class");
     expect(visited).toContain("plan_search");
     expect(visited).not.toContain("plan_discovery");
+  });
+
+  it("[REGRESSION] uses an injected clock in plan_search when one is set, for a frozen clock end to end in evals", async () => {
+    const frozen = new Date("2026-01-01T00:00:00Z");
+    setPlanSearchClock(() => frozen);
+    try {
+      vi.mocked(planSearch).mockImplementation(async (state, now) => {
+        visited.push("plan_search");
+        expect(now).toBe(frozen);
+        return { searchPlan: null };
+      });
+      await invokeGraph("ORD to NRT business class");
+      expect(visited).toContain("plan_search");
+    } finally {
+      setPlanSearchClock(undefined);
+    }
+  });
+
+  it("[REGRESSION] falls back to plan_search's own real-clock default when no clock is injected", async () => {
+    setPlanSearchClock(undefined);
+    vi.mocked(planSearch).mockImplementation(async (state, now) => {
+      visited.push("plan_search");
+      expect(now).toBeUndefined();
+      return { searchPlan: null };
+    });
+    await invokeGraph("ORD to NRT business class");
+    expect(visited).toContain("plan_search");
   });
 
   it("uses the deterministic UI preparation path for a structured trip request", async () => {

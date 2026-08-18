@@ -38,4 +38,18 @@ describe("retrieveKnowledgeNode", () => {
 
     expect(retrieveKnowledge).toHaveBeenCalledOnce();
   });
+
+  it("[REGRESSION] records a degraded reason on a vector-store outage, appending to reasons already set this turn", async () => {
+    vi.mocked(retrieveKnowledge).mockRejectedValueOnce(new Error("outage"));
+
+    const result = await retrieveKnowledgeNode({
+      intent: "knowledge",
+      awardResults: [],
+      tripSummaries: [],
+      degradedReasons: ["refresh_outage"],
+    } as unknown as AgentStateType);
+
+    expect(result.kbDocs).toEqual([]);
+    expect(result.degradedReasons).toEqual(["refresh_outage", "rag_retrieval_failed"]);
+  });
 });

@@ -27,6 +27,6 @@ export async function retrieveKnowledgeNode(
     return { kbDocs: docs };
   } catch {
     // A vector-store outage degrades the answer; it should not end the turn.
-    return { kbDocs: [] };
+    return { kbDocs: [], degradedReasons: [...(state.degradedReasons ?? []), "rag_retrieval_failed"] };
   }
 }
