@@ -3,8 +3,8 @@ import { transferPartnersFor } from "./programs";
 
 describe("transferPartnersFor", () => {
   it("returns only the selected cards that transfer to the program", () => {
-    // Chase transfers to British Airways Club; Citi does not.
-    const partners = transferPartnersFor("british", ["chase", "citi"]);
+    // Chase transfers to Aeroplan; Citi does not.
+    const partners = transferPartnersFor("aeroplan", ["chase", "citi"]);
     expect(partners.map((p) => p.id)).toEqual(["chase"]);
   });
 
