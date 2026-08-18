@@ -88,7 +88,7 @@ describe("buildSynthesisContext", () => {
     expect(buildSynthesisContext(state())).toContain("options to Tokyo?");
   });
 
-  it("keeps knowledge document identifiers and sources out of the writer context", () => {
+  it("keeps knowledge document identifiers out of the writer context, but not sources", () => {
     const s = state({
       kbDocs: [
         {
@@ -103,7 +103,30 @@ describe("buildSynthesisContext", () => {
     const ctx = buildSynthesisContext(s);
     expect(ctx).toContain("The Room is excellent.");
     expect(ctx).not.toContain("ana-777");
-    expect(ctx).not.toContain("https://x");
+  });
+
+  it("[REGRESSION] includes a research note's source URLs so the model can cite them — frontmatter.ts documents this as the intended design", () => {
+    const s = state({
+      kbDocs: [
+        {
+          id: "ana-777",
+          collection: "products",
+          text: "The Room is excellent.",
+          sources: ["https://www.ana.co.jp/the-room"],
+          updated: "2026-06-01",
+        },
+      ],
+    });
+    const ctx = buildSynthesisContext(s);
+    expect(ctx).toContain("https://www.ana.co.jp/the-room");
+  });
+
+  it("omits a Sources line for a research note with no sources", () => {
+    const s = state({
+      kbDocs: [{ id: "x", collection: "booking", text: "A booking note.", sources: [], updated: "2026-06-01" }],
+    });
+    const ctx = buildSynthesisContext(s);
+    expect(ctx).not.toMatch(/Sources:/);
   });
 
   it("suppresses knowledge excerpts when a flight search found no options", () => {
@@ -363,5 +386,9 @@ describe("SYNTHESIZE_PROMPT", () => {
     expect(SYNTHESIZE_PROMPT).toMatch(/never say "knowledge base"/i);
     expect(SYNTHESIZE_PROMPT).toMatch(/Availability IDs,[\s\S]*never user-facing/i);
     expect(SYNTHESIZE_PROMPT).not.toMatch(/cite that excerpt's id/i);
+  });
+
+  it("[REGRESSION] permits citing a research excerpt's source URL, resolving the prompt/frontmatter design disagreement", () => {
+    expect(SYNTHESIZE_PROMPT).toMatch(/cite a source url|source url in prose/i);
   });
 });

@@ -135,4 +135,46 @@ describe("rankRecommendations", () => {
 
     expect(result.recommendations).toHaveLength(0);
   });
+
+  it("[REGRESSION] a recommendation's refreshedAt reflects the option's own refreshConfirmedAt, not an unrelated confirmed option's global timestamp", async () => {
+    const result = await rankRecommendations({
+      searchPlan: { origins: ["SFO"], destinations: ["HND"], cabins: ["business"], nonstopOnly: false, programs: [] },
+      awardResults: [
+        { availabilityId: "confirmed", origin: "SFO", destination: "HND", date: "2026-09-18", program: "united", cabin: "business", miles: 60000, direct: true, airlines: "UA", updatedAt: "2026-08-10T00:00:00Z", refreshConfirmedAt: "2026-08-17T12:00:00Z" },
+        { availabilityId: "not-refreshed", origin: "SFO", destination: "HND", date: "2026-09-18", program: "delta", cabin: "business", miles: 61000, direct: true, airlines: "DL", updatedAt: "2026-08-10T00:00:00Z" },
+      ],
+      tripSummaries: [],
+      // A stale global timestamp from refreshing a DIFFERENT, unrelated option this turn.
+      refreshedAt: "2026-08-17T12:00:00Z",
+    } as unknown as AgentStateType);
+
+    const byId = new Map((result.recommendations ?? []).map((r) => [r.id.split(":")[0], r]));
+    expect(byId.get("confirmed")?.refreshedAt).toBe("2026-08-17T12:00:00Z");
+    // Must fall back to its own updatedAt, never the unrelated global refreshedAt.
+    expect(byId.get("not-refreshed")?.refreshedAt).toBe("2026-08-10T00:00:00Z");
+  });
+
+  it("[REGRESSION] hard-excludes an option with fewer confirmed seats than travelers, rather than merely down-ranking it", async () => {
+    const result = await rankRecommendations({
+      searchPlan: { origins: ["SFO"], destinations: ["HND"], cabins: ["business"], nonstopOnly: false, programs: [], travelers: 2 },
+      awardResults: [
+        { availabilityId: "one-seat", origin: "SFO", destination: "HND", date: "2026-09-18", program: "united", cabin: "business", miles: 60000, direct: true, airlines: "UA", remainingSeats: 1 },
+      ],
+      tripSummaries: [],
+    } as unknown as AgentStateType);
+
+    expect(result.recommendations).toHaveLength(0);
+  });
+
+  it("does not exclude an option with an unknown seat count, even when travelers is set", async () => {
+    const result = await rankRecommendations({
+      searchPlan: { origins: ["SFO"], destinations: ["HND"], cabins: ["business"], nonstopOnly: false, programs: [], travelers: 2 },
+      awardResults: [
+        { availabilityId: "unknown-seats", origin: "SFO", destination: "HND", date: "2026-09-18", program: "united", cabin: "business", miles: 60000, direct: true, airlines: "UA" },
+      ],
+      tripSummaries: [],
+    } as unknown as AgentStateType);
+
+    expect(result.recommendations).toHaveLength(1);
+  });
 });

@@ -26,8 +26,9 @@ import type { AgentStateType, SearchAttempt, SearchPlan } from "../state";
 import { blendedCost } from "../points-value";
 import { lastUserText } from "./triage";
 
-export const ENRICH_TOP_N = 5;
 export const MAX_ROUTE_SEARCH_CALLS = 4;
+/** The UI/synthesis only ever look at the top ~20; this bounds checkpointed-state growth well above that. */
+export const MAX_AWARD_RESULTS = 200;
 
 type RouteAttempt = Omit<SearchAttempt, "resultCount">;
 
@@ -47,13 +48,31 @@ const TIER_ORDER: Record<NonNullable<AwardOption["searchTier"]>, number> = {
 
 type ClientParts = { inner: SeatsAeroClient; cacheStore?: CacheStore };
 
+/**
+ * Live when a key is present, replay when it is not, by default — see
+ * createSeatsAeroClient's own doc comment. Overridable so live/replay
+ * selection is explicit and testable rather than only inferable from
+ * process.env at module load.
+ */
+let clientFactory: () => SeatsAeroClient = createSeatsAeroClient;
+
+export function setSeatsAeroClientFactory(factory: () => SeatsAeroClient): void {
+  clientFactory = factory;
+}
+
 let partsPromise: Promise<ClientParts> | undefined;
+
+/** Test-only: undoes setSeatsAeroClientFactory and the getClientParts() memoization. */
+export function resetSeatsAeroClientForTests(): void {
+  clientFactory = createSeatsAeroClient;
+  partsPromise = undefined;
+}
 
 /** Memoized so the Mongo connection and TTL index are created once, not per request. */
 function getClientParts(): Promise<ClientParts> {
   if (!partsPromise) {
     partsPromise = (async () => {
-      const inner = createSeatsAeroClient();
+      const inner = clientFactory();
       try {
         const db = (await mongoClient()).db(DB_NAME);
         return { inner, cacheStore: await mongoCacheStore(db) };
@@ -350,7 +369,7 @@ export async function searchAwards(
       }
     }
     return {
-      awardResults: rankOptions(collected, { preferLowTaxes: prefersLowTaxes(lastUserText(state)) }),
+      awardResults: rankOptions(collected, { preferLowTaxes: prefersLowTaxes(lastUserText(state)) }).slice(0, MAX_AWARD_RESULTS),
       searchStatus: successfulCalls > 0 ? "searched" : "provider_error",
       positioningSearchComplete: true,
     };
@@ -367,7 +386,7 @@ export async function searchAwards(
     exactSucceeded = true;
   } catch { /* A failed exact call still allows the bounded fallback ladder. */ }
   return {
-    awardResults: rankOptions(collected, { preferLowTaxes: prefersLowTaxes(lastUserText(state)) }),
+    awardResults: rankOptions(collected, { preferLowTaxes: prefersLowTaxes(lastUserText(state)) }).slice(0, MAX_AWARD_RESULTS),
     searchAttempts: [{ ...exact, resultCount: collected.length }],
     searchStatus: exactSucceeded ? "searched" : "provider_error",
     positioningSearchComplete: false,
@@ -394,11 +413,16 @@ export async function searchPositioningOptions(state: AgentStateType): Promise<P
     } catch { options = []; }
     collected.push(...options);
     completed.push({ ...attempt, resultCount: options.length });
-    if (options.filter((option) => reasonableOption(option, plan)).length >= 3) break;
+    // No early-stop on a shallow "reasonable enough" check here: enrichment
+    // (which supplies duration/stop/fee detail) only runs after this whole
+    // ladder completes, so a miles-only pass can't actually judge whether an
+    // option is good enough to stop broadening for. The ladder is already
+    // bounded to MAX_ROUTE_SEARCH_CALLS total, so running it to completion
+    // costs at most 1-2 extra calls.
   }
 
   return {
-    awardResults: rankOptions(dedupeOptions([...(state.awardResults ?? []), ...collected])),
+    awardResults: rankOptions(dedupeOptions([...(state.awardResults ?? []), ...collected])).slice(0, MAX_AWARD_RESULTS),
     searchAttempts: [...priorAttempts, ...completed],
     // A failed exact call followed by a successful positioning attempt still counts as "searched".
     searchStatus: anySucceeded ? "searched" : state.searchStatus,

@@ -1,5 +1,6 @@
 // src/agent/nodes/refresh.test.ts
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { RunnableConfig } from "@langchain/core/runnables";
 import type { AwardOption } from "../../tools";
 import type { AgentStateType, SearchPlan } from "../state";
 import type {
@@ -31,6 +32,7 @@ import {
   staleOptionIds,
   refreshAvailability,
   REFRESH_TOP_N,
+  POLL_INTERVAL_MS,
 } from "./refresh";
 
 const NOW = new Date("2026-08-11T12:00:00Z");
@@ -338,7 +340,7 @@ describe("refreshAvailability / refetch", () => {
     expect(refreshMock).not.toHaveBeenCalled();
   });
 
-  it("confirms freshness without calling search when every item is already fresh", async () => {
+  it("[REGRESSION] confirms freshness without calling search when every item is already fresh, and stamps only the confirmed option", async () => {
     const previous = [opt({ availabilityId: "rec1", updatedAt: realHoursAgo(12) })];
     refreshMock.mockResolvedValueOnce({
       complete: true,
@@ -349,5 +351,86 @@ describe("refreshAvailability / refetch", () => {
 
     expect(result.refreshedAt).toBeTruthy();
     expect(searchMock).not.toHaveBeenCalled();
+    expect(result.awardResults?.find((o) => o.availabilityId === "rec1")?.refreshConfirmedAt).toBe(result.refreshedAt);
+  });
+
+  it("[REGRESSION] an id requested for refresh but not returned (sold out, or refresh failed for it specifically) is kept stale, not stamped confirmed", async () => {
+    const previous = [
+      opt({ availabilityId: "confirmed", cabin: "business", updatedAt: realHoursAgo(12) }),
+      opt({ availabilityId: "gone", cabin: "business", updatedAt: realHoursAgo(12) }),
+    ];
+    // Mixed statuses — not allFresh, but "confirmed" is confirmed, so refetch runs.
+    refreshMock.mockResolvedValueOnce({
+      complete: true,
+      items: [
+        { id: "confirmed", status: "succeeded" },
+        { id: "gone", status: "failed" },
+      ],
+    });
+    // Only "confirmed" comes back from the refetch search — "gone" doesn't
+    // (sold out / expired), so it falls into refetch's "missing" bucket.
+    searchMock.mockResolvedValueOnce(searchResponse([multiCabinRecord({ ID: "confirmed", RouteID: "r-confirmed" })]));
+
+    const result = await refreshAvailability(routeState({ awardResults: previous }));
+
+    const byId = new Map((result.awardResults ?? []).map((o) => [o.availabilityId, o]));
+    expect(byId.get("confirmed")?.refreshConfirmedAt).toBeTruthy();
+    expect(byId.get("gone")?.refreshConfirmedAt).toBeUndefined();
+  });
+
+  it("[REGRESSION] a replaced option's refreshConfirmedAt matches the refresh timestamp, and an untouched option's stays unset", async () => {
+    const previous = [
+      opt({ availabilityId: "rec1", cabin: "business", updatedAt: realHoursAgo(12) }),
+      // Already fresh — never enters staleOptionIds, so refresh never touches it.
+      opt({ availabilityId: "other", cabin: "business", updatedAt: realHoursAgo(1) }),
+    ];
+    refreshMock.mockResolvedValueOnce(succeeded(["rec1"]));
+    searchMock.mockResolvedValueOnce(searchResponse([multiCabinRecord()]));
+
+    const result = await refreshAvailability(routeState({ awardResults: previous }));
+
+    const byId = new Map((result.awardResults ?? []).map((o) => [o.availabilityId, o]));
+    expect(byId.get("rec1")?.refreshConfirmedAt).toBe(result.refreshedAt);
+    expect(byId.get("other")?.refreshConfirmedAt).toBeUndefined();
+  });
+
+  it("[REGRESSION] an already-aborted signal skips the refresh call entirely", async () => {
+    const previous = [opt({ availabilityId: "rec1", updatedAt: realHoursAgo(12) })];
+    const controller = new AbortController();
+    controller.abort();
+
+    const result = await refreshAvailability(
+      routeState({ awardResults: previous }),
+      { signal: controller.signal } as RunnableConfig,
+    );
+
+    expect(result).toEqual({});
+    expect(refreshMock).not.toHaveBeenCalled();
+  });
+
+  it("[REGRESSION] an abort mid-sleep interrupts the poll loop before the next refresh call", async () => {
+    vi.useFakeTimers();
+    try {
+      const previous = [opt({ availabilityId: "rec1", updatedAt: realHoursAgo(12) })];
+      const controller = new AbortController();
+      refreshMock.mockResolvedValue({ complete: false, items: [{ id: "rec1", status: "processing" }] });
+
+      const resultPromise = refreshAvailability(
+        routeState({ awardResults: previous }),
+        { signal: controller.signal } as RunnableConfig,
+      );
+
+      // Let the first client.refresh(ids) call resolve and the loop reach its inter-poll sleep.
+      await vi.advanceTimersByTimeAsync(0);
+      controller.abort();
+      // Let the now-abort-resolved sleep settle.
+      await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
+
+      const result = await resultPromise;
+      expect(result).toEqual({});
+      expect(refreshMock).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

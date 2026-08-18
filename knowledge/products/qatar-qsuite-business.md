@@ -4,10 +4,10 @@ collection: products
 airlines: [QR]
 aircraft: ["A350", "777", "Boeing 777", "Airbus A350"]
 cabin: business
-programs: [britishairways, qatarairways]
+programs: [britishairways, qatar]
 regions: [Middle East]
 updated: 2026-06-01
-sources: ["https://www.qatarairways.com/en/flying-qatar-airways/travel-classes/qsuite.html"]
+sources: ["https://www.qatar.com/en/flying-qatar-airways/travel-classes/qsuite.html"]
 ---
 
 Qatar Airways' Qsuite is widely regarded as the benchmark business-class
