@@ -4,6 +4,9 @@ import path from "node:path";
 export default defineConfig({
   test: {
     environment: "node",
+    env: {
+      ANTHROPIC_API_KEY: "test-anthropic-key",
+    },
     include: [
       "src/**/*.test.ts",
       "app/**/*.test.ts",

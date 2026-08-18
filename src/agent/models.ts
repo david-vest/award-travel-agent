@@ -31,6 +31,7 @@ export function chat(opts: {
   effort: Effort;
   model?: ModelTier;
   maxTokens?: number;
+  apiKey?: string;
   /** Set "summarized" only where reasoning is streamed to a user. */
   thinkingDisplay?: "omitted" | "summarized";
   /**
@@ -44,7 +45,12 @@ export function chat(opts: {
   disableThinking?: boolean;
 }): ChatAnthropic {
   const modelTier = opts.model ?? "sonnet";
+  const apiKey =
+    opts.apiKey ??
+    process.env.ANTHROPIC_API_KEY ??
+    "test-anthropic-key";
   return new ChatAnthropic({
+    apiKey,
     model: MODEL_IDS[modelTier],
     maxTokens: opts.maxTokens ?? MAX_TOKENS[opts.effort],
     // Native constructor fields on this @langchain/anthropic version — not

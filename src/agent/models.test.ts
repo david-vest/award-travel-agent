@@ -52,4 +52,22 @@ describe("chat", () => {
     const model = chat({ effort: "low" }) as unknown as { thinking?: { type: string } };
     expect(model.thinking?.type).toBe("adaptive");
   });
+
+  it("safely instantiates with fallback key when ANTHROPIC_API_KEY is not set", () => {
+    const originalKey = process.env.ANTHROPIC_API_KEY;
+    try {
+      delete process.env.ANTHROPIC_API_KEY;
+      const model = chat({ effort: "low" });
+      expect(model.apiKey).toBe("test-anthropic-key");
+    } finally {
+      if (originalKey !== undefined) {
+        process.env.ANTHROPIC_API_KEY = originalKey;
+      }
+    }
+  });
+
+  it("accepts a custom apiKey override", () => {
+    const model = chat({ effort: "low", apiKey: "custom-test-key" });
+    expect(model.apiKey).toBe("custom-test-key");
+  });
 });
