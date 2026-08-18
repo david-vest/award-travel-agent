@@ -50,7 +50,7 @@ graph TD;
 	verify_groundedness -.-> synthesize;
 	verify_groundedness -.-> degrade;
 	verify_groundedness -.-> emit;
-	classDef default fill:#f2f0ff,line-height:1.2;
-	classDef first fill-opacity:0;
-	classDef last fill:#bfb6fc;
+	classDef default fill:#f2f0ff,stroke:#6366f1,color:#1e1b4b,stroke-width:1.5px,line-height:1.2;
+	classDef first fill:#e0e7ff,stroke:#4338ca,color:#1e1b4b,stroke-width:2px;
+	classDef last fill:#bfb6fc,stroke:#4338ca,color:#1e1b4b,stroke-width:2px;
 ```

@@ -13,6 +13,14 @@ export default defineConfig({
     ],
     coverage: {
       provider: "v8",
+      // evals/run.ts is an orchestration script whose bulk (runIntentRouting,
+      // runSearchPlanning, runGroundedness, main) calls live LangSmith/
+      // Anthropic evaluate() — it needs paid API credentials to exercise and
+      // can't be meaningfully unit tested, the same reason src/rag/ingest.ts
+      // (also live-infra-dependent) has never been part of this measurement.
+      // Its one pure, testable function (contentHash) has its own full test
+      // coverage in run.test.ts regardless of this exclude.
+      exclude: ["evals/run.ts"],
       // A few points under the measured baseline (87.38/77.06/88.73/90.63 as
       // of 2026-08-17) so incidental variance doesn't fail CI, while a real
       // regression still does.

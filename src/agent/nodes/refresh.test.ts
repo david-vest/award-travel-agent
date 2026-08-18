@@ -433,4 +433,33 @@ describe("refreshAvailability / refetch", () => {
       vi.useRealTimers();
     }
   });
+
+  it("[REGRESSION] records a degraded reason when the provider confirms nothing (all failed/not-found/quota-starved)", async () => {
+    const previous = [opt({ availabilityId: "rec1", updatedAt: realHoursAgo(12) })];
+    refreshMock.mockResolvedValueOnce({
+      complete: true,
+      items: [{ id: "rec1", status: "failed" }],
+    });
+
+    const result = await refreshAvailability(routeState({ awardResults: previous }));
+
+    expect(result.degradedReasons).toEqual(["refresh_unconfirmed"]);
+  });
+
+  it("[REGRESSION] records a degraded reason on a provider outage/quota exception, and appends to reasons already set this turn", async () => {
+    const previous = [opt({ availabilityId: "rec1", updatedAt: realHoursAgo(12) })];
+    refreshMock.mockRejectedValueOnce(new Error("quota exceeded"));
+
+    const result = await refreshAvailability(
+      routeState({ awardResults: previous, degradedReasons: ["rag_retrieval_failed"] }),
+    );
+
+    expect(result.degradedReasons).toEqual(["rag_retrieval_failed", "refresh_outage"]);
+  });
+
+  it("does not record a degraded reason when nothing was stale (there was nothing to do, not a failure)", async () => {
+    const fresh = [opt({ updatedAt: realHoursAgo(1) })];
+    const result = await refreshAvailability(routeState({ awardResults: fresh }));
+    expect(result.degradedReasons).toBeUndefined();
+  });
 });

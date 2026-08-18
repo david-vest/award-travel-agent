@@ -7,7 +7,7 @@ import { guardInput, refuse } from "./nodes/guard";
 import { triage } from "./nodes/triage";
 import { prepareUiSearch } from "./nodes/prepare-ui-search";
 import { resolveUiLocations } from "./nodes/resolve-ui-locations";
-import { planSearch } from "./nodes/plan-search";
+import { planSearch, currentPlanSearchClock } from "./nodes/plan-search";
 import { planDiscovery } from "./nodes/plan-discovery";
 import { searchAwards, searchPositioningOptions } from "./nodes/search";
 import { enrichTrips } from "./nodes/enrich";
@@ -49,7 +49,11 @@ function buildStateGraph() {
     // Wrapped: planSearch's optional `now` param (added so evals can pin the
     // clock) structurally conflicts with LangGraph's NodeAction signature at
     // the type level, even though the graph always calls with one argument.
-    .addNode("plan_search", (state: AgentStateType) => planSearch(state))
+    // currentPlanSearchClock() is undefined in production, so this is
+    // planSearch(state, undefined) there — identical to planSearch(state),
+    // since a literal undefined still triggers planSearch's own `now`
+    // default parameter.
+    .addNode("plan_search", (state: AgentStateType) => planSearch(state, currentPlanSearchClock()?.()))
     .addNode("plan_discovery", planDiscovery)
     .addNode("search_awards", searchAwards)
     .addNode("search_positioning", searchPositioningOptions)

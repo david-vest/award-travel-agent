@@ -37,7 +37,9 @@ export const guardSchema = z.object({
  * the same cross-turn-leak reason as awardResults/tripSummaries: without a
  * reset, a stale revisionCount would eat into the next turn's retry budget,
  * and a stale refreshedAt would make a turn that never refreshed falsely
- * claim it re-confirmed with the provider.
+ * claim it re-confirmed with the provider. degradedReasons resets for the
+ * same reason — a dependency outage from three turns ago must not tag an
+ * unrelated later turn as degraded.
  */
 const RESET_TURN_STATE: Partial<AgentStateType> = {
   awardResults: [],
@@ -52,6 +54,7 @@ const RESET_TURN_STATE: Partial<AgentStateType> = {
   violations: [],
   refusalReason: null,
   refreshedAt: null,
+  degradedReasons: [],
 };
 
 export async function guardInput(

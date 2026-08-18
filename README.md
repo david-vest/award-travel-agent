@@ -42,7 +42,24 @@ make dev                 # http://localhost:3000
 Generated directly from the compiled graph (`buildGraphWithoutCheckpointer().getGraph().drawMermaid()`), so it can't drift from the code — see [`docs/graph.md`](docs/graph.md) to regenerate it.
 
 ```mermaid
-flowchart LR
+%%{init: {
+  'theme': 'base',
+  'themeVariables': {
+    'primaryColor': '#eef2ff',
+    'primaryTextColor': '#1e1b4b',
+    'primaryBorderColor': '#6366f1',
+    'lineColor': '#4f46e5',
+    'textColor': '#1e1b4b',
+    'edgeLabelBackground': '#ffffff',
+    'fontSize': '16px'
+  },
+  'flowchart': {
+    'nodeSpacing': 30,
+    'rankSpacing': 40,
+    'curve': 'linear'
+  }
+}}%%
+flowchart TD
   UI["Trip form"] --> API["POST /api/agent/runs"]
   API --> Guard["guard_input"]
   Guard --> Resolve["resolve_ui_locations"]

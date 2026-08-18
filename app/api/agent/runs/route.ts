@@ -3,16 +3,56 @@ import type { RunnableConfig } from "@langchain/core/runnables";
 import { agentRunRequestSchema, type AgentEvent, type AgentStage, type FlightRecommendation } from "../../../../src/contracts/travel-search";
 import { describeTripRequest } from "../../../../src/agent/nodes/prepare-ui-search";
 import { getAgentGraph } from "../../../../src/agent/runtime";
+import { checkRateLimit } from "../../../../src/api/rate-limit";
 
 export const runtime = "nodejs";
 
 const encoder = new TextEncoder();
+
+// No authentication in this app (a deliberate scope decision), so this is
+// per-IP, not per-account — see rate-limit.ts's own module comment for the
+// per-process-instance caveat.
+const RATE_LIMIT = { limit: 10, windowMs: 60_000 };
+
+// The largest legitimate TripRequest payload after the bounded arrays/string
+// lengths in contracts/travel-search.ts is small — this is generous
+// headroom, not a tight fit. A client that lies about or omits
+// Content-Length isn't fully covered by this check alone; it's defense in
+// depth alongside the Zod bounds, which are enforced either way.
+const MAX_BODY_BYTES = 32 * 1024;
+// Backstop for the whole request, not any single provider call — those are
+// already bounded individually (POLL_CEILING_MS, live.ts's
+// AbortSignal.timeout). This exists for the case where something upstream
+// hangs past all of its own internal bounds.
+const EXECUTION_DEADLINE_MS = 120_000;
+
+function clientKey(request: Request): string {
+  return request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+}
 
 function eventPayload(event: AgentEvent): Uint8Array {
   return encoder.encode(`data: ${JSON.stringify(event)}\n\n`);
 }
 
 export async function POST(request: Request) {
+  const rateLimit = checkRateLimit(clientKey(request), RATE_LIMIT);
+  if (!rateLimit.allowed) {
+    return Response.json(
+      { error: "Too many requests. Please slow down." },
+      { status: 429, headers: { "Retry-After": Math.ceil(rateLimit.retryAfterMs / 1000).toString() } },
+    );
+  }
+
+  const contentType = request.headers.get("content-type");
+  if (!contentType || !/^application\/json(;|$)/i.test(contentType)) {
+    return Response.json({ error: "Content-Type must be application/json." }, { status: 415 });
+  }
+
+  const contentLength = Number(request.headers.get("content-length"));
+  if (Number.isFinite(contentLength) && contentLength > MAX_BODY_BYTES) {
+    return Response.json({ error: "Request body too large." }, { status: 413 });
+  }
+
   let json: unknown;
   try {
     json = await request.json();
@@ -47,6 +87,8 @@ export async function POST(request: Request) {
         send({ type: "stage", stage, status: "complete", detail, elapsedMs: Math.max(0, Date.now() - startedAt) });
       };
 
+      const deadlineSignal = AbortSignal.any([request.signal, AbortSignal.timeout(EXECUTION_DEADLINE_MS)]);
+
       try {
         send({ type: "run_started", threadId });
         activateStage("search", body.request ? "Preparing the exact-route award query." : "Reading the follow-up and deciding whether a new search is needed.");
@@ -60,7 +102,7 @@ export async function POST(request: Request) {
             award_programs: body.request?.awardPrograms ?? [],
           },
           tags: ["roam-ui"],
-          signal: request.signal,
+          signal: deadlineSignal,
         };
         const graphStream = await graph.stream(
           {
@@ -71,8 +113,23 @@ export async function POST(request: Request) {
         );
 
         for await (const update of graphStream as AsyncIterable<Record<string, Record<string, unknown>>>) {
-          if (request.signal.aborted) break;
+          if (deadlineSignal.aborted) break;
           for (const [node, data] of Object.entries(update)) {
+            // Surfaces a dependency degrading (e.g. refresh outage, RAG
+            // retrieval failure) so the UI/trace can distinguish "nothing
+            // was wrong" from "this answer is degraded" — additive to
+            // whichever stage is currently active, not a new event type.
+            if (Array.isArray(data.degradedReasons) && data.degradedReasons.length > 0) {
+              const activeStage = [...stageStatus.entries()].find(([, status]) => status === "active")?.[0];
+              if (activeStage) {
+                send({
+                  type: "stage",
+                  stage: activeStage,
+                  status: "active",
+                  detail: `Degraded: ${(data.degradedReasons as string[]).join(", ")}`,
+                });
+              }
+            }
             if (node === "resolve_ui_locations") {
               activateStage("search", "Resolved the requested places to searchable commercial airports.");
             }
@@ -114,13 +171,39 @@ export async function POST(request: Request) {
         }
 
         if (!request.signal.aborted) {
-          if (stageStatus.get("rank") !== "complete") completeStage("rank", `Ranked ${recommendations.length.toLocaleString()} option${recommendations.length === 1 ? "" : "s"}.`);
-          send({ type: "complete", answer, recommendations });
+          if (deadlineSignal.aborted) {
+            send({
+              type: "error",
+              code: "deadline_exceeded",
+              message: "This request took too long to complete. Please try again.",
+              retryable: true,
+            });
+          } else {
+            if (stageStatus.get("rank") !== "complete") completeStage("rank", `Ranked ${recommendations.length.toLocaleString()} option${recommendations.length === 1 ? "" : "s"}.`);
+            send({ type: "complete", answer, recommendations });
+          }
         }
       } catch (error) {
+        // Never send error.message verbatim — it can carry raw provider API
+        // text or other internal detail. Log the real error server-side;
+        // send only a small, stable, safe public message.
+        console.error("agent run failed", error);
         if (!request.signal.aborted) {
-          const message = error instanceof Error ? error.message : "The travel agent could not complete this request.";
-          send({ type: "error", code: "agent_run_failed", message, retryable: true });
+          if (deadlineSignal.aborted) {
+            send({
+              type: "error",
+              code: "deadline_exceeded",
+              message: "This request took too long to complete. Please try again.",
+              retryable: true,
+            });
+          } else {
+            send({
+              type: "error",
+              code: "agent_run_failed",
+              message: "The travel agent could not complete this request.",
+              retryable: true,
+            });
+          }
         }
       } finally {
         controller.close();

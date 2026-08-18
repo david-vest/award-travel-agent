@@ -41,6 +41,7 @@ const SEARCH_RESET_FIELDS = {
   draft: null,
   violations: [],
   refreshedAt: null,
+  degradedReasons: [],
 };
 
 /** Same, plus refusalReason default-reset — every path except an explicit rejection wants this. */
