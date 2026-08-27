@@ -63,6 +63,24 @@ describe("rankRecommendations", () => {
     expect(result.recommendations?.[0].scoreFactors).toContainEqual({ label: "Layover", value: "1h 35m total" });
   });
 
+  it("uses the canonical pairing when one availability contains several itineraries", async () => {
+    const result = await rankRecommendations({
+      searchPlan: { origins: ["SFO"], destinations: ["NRT"], cabins: ["business"], nonstopOnly: false, programs: [] },
+      awardResults: [{ availabilityId: "multi", origin: "SFO", destination: "NRT", date: "2026-09-22", program: "alaska", cabin: "business", miles: 150000, direct: false, airlines: "AS" }],
+      tripSummaries: [
+        { availabilityId: "multi", tripId: "short", cabin: "business", flightNumbers: ["AS1327", "AS823"], aircraft: [], carriers: ["AS"], stops: 1, durationMinutes: 886, connections: [{ airport: "SEA", layoverMinutes: 118 }] },
+        { availabilityId: "multi", tripId: "long", cabin: "business", flightNumbers: ["AS580", "AS823"], aircraft: [], carriers: ["AS"], stops: 1, durationMinutes: 1080, connections: [{ airport: "SEA", layoverMinutes: 312 }] },
+      ],
+    } as unknown as AgentStateType);
+
+    expect(result.recommendations?.[0]).toMatchObject({
+      flightNumbers: ["AS1327", "AS823"],
+      durationMinutes: 886,
+      connections: [{ airport: "SEA", layoverMinutes: 118 }],
+    });
+    expect(result.recommendations?.[0].scoreFactors).toContainEqual({ label: "Layover", value: "1h 58m total" });
+  });
+
   it("prefers a shorter layover when points, fees, and stops are equal", async () => {
     const result = await rankRecommendations({
       searchPlan: { origins: ["SFO"], destinations: ["HND"], cabins: ["business"], nonstopOnly: false, programs: [] },

@@ -7,6 +7,7 @@ import { probesFromPlan } from "./plan-discovery";
 import { destinationsForSearch } from "./search";
 import { displaySearchLocation } from "../../tools/seats-aero/multi-city-codes";
 import { awardProgramForSource, transferPartnersFor } from "../../domain/programs";
+import { canonicalTripForOption } from "../../tools";
 
 // The writer needs the best choices, not every raw match. This matches the
 // number enriched with flight details and keeps broad searches concise.
@@ -179,7 +180,10 @@ export function buildSynthesisContext(state: AgentStateType): string {
     }
   }
 
-  const trips = (state.tripSummaries ?? []).filter((trip) => optionNumberByAvailabilityId.has(trip.availabilityId));
+  const trips = options.flatMap((option) => {
+    const trip = canonicalTripForOption(option, state.tripSummaries ?? []);
+    return trip ? [trip] : [];
+  });
   if (trips.length > 0) {
     parts.push(
       `Flight-card details (use only when a field adds decision value; do not restate each card):\n` +

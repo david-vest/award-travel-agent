@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { z } from "zod";
 import {
+  canonicalTripForOption,
   summarizeTrip,
   makeGetTripDetailsTool,
   type TripSummary,
@@ -109,6 +110,47 @@ describe("summarizeTrip", () => {
       cabin: "economy",
       miles: 45000,
     });
+  });
+});
+
+describe("canonicalTripForOption", () => {
+  it("chooses one stable, cabin-matched itinerary with the better connection", () => {
+    const option = { availabilityId: "a1", cabin: "business" } as const;
+    const trips: TripSummary[] = [
+      {
+        availabilityId: "a1",
+        tripId: "long",
+        cabin: "business",
+        flightNumbers: ["AS580", "AS823"],
+        aircraft: [],
+        carriers: ["AS"],
+        stops: 1,
+        durationMinutes: 1_080,
+        connections: [{ airport: "SEA", layoverMinutes: 312 }],
+      },
+      {
+        availabilityId: "a1",
+        tripId: "short",
+        cabin: "business",
+        flightNumbers: ["AS1327", "AS823"],
+        aircraft: [],
+        carriers: ["AS"],
+        stops: 1,
+        durationMinutes: 886,
+        connections: [{ airport: "SEA", layoverMinutes: 118 }],
+      },
+      {
+        availabilityId: "a1",
+        tripId: "wrong-cabin",
+        cabin: "economy",
+        flightNumbers: ["AS1"],
+        aircraft: [],
+        carriers: ["AS"],
+        stops: 0,
+      },
+    ];
+
+    expect(canonicalTripForOption(option, trips)?.tripId).toBe("short");
   });
 });
 

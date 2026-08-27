@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { tool } from "@langchain/core/tools";
+import type { AwardOption } from "./search-awards";
 import type { SeatsAeroClient } from "./seats-aero";
 import type { Trip } from "./seats-aero/types";
 import { normalizeTaxes } from "./seats-aero/money";
@@ -21,6 +22,55 @@ export type TripSummary = {
   departsAt?: string;
   arrivesAt?: string;
 };
+
+function totalKnownLayoverMinutes(trip: TripSummary): number | undefined {
+  const layovers = (trip.connections ?? [])
+    .map((connection) => connection.layoverMinutes)
+    .filter((minutes): minutes is number => minutes != null && Number.isFinite(minutes));
+  return layovers.length > 0
+    ? layovers.reduce((total, minutes) => total + minutes, 0)
+    : undefined;
+}
+
+function hasRiskyShortConnection(trip: TripSummary): boolean {
+  return (trip.connections ?? []).some(
+    (connection) => connection.layoverMinutes != null && connection.layoverMinutes < 45,
+  );
+}
+
+function compareCanonicalTrips(a: TripSummary, b: TripSummary): number {
+  return a.stops - b.stops
+    || Number(hasRiskyShortConnection(a)) - Number(hasRiskyShortConnection(b))
+    || (a.durationMinutes ?? Number.POSITIVE_INFINITY) - (b.durationMinutes ?? Number.POSITIVE_INFINITY)
+    || (totalKnownLayoverMinutes(a) ?? Number.POSITIVE_INFINITY)
+      - (totalKnownLayoverMinutes(b) ?? Number.POSITIVE_INFINITY)
+    || Number(!a.departsAt || !a.arrivesAt) - Number(!b.departsAt || !b.arrivesAt)
+    || Number(a.flightNumbers.length === 0) - Number(b.flightNumbers.length === 0)
+    || (a.totalTaxes ?? Number.POSITIVE_INFINITY) - (b.totalTaxes ?? Number.POSITIVE_INFINITY)
+    || (b.remainingSeats ?? -1) - (a.remainingSeats ?? -1)
+    || a.tripId.localeCompare(b.tripId);
+}
+
+/**
+ * Chooses the one concrete itinerary represented by an availability card.
+ * Seats.aero can return several flight pairings for one availability id; all
+ * downstream consumers must share this selection so a card, its evidence,
+ * and the prose recommendation cannot describe different pairings.
+ */
+export function canonicalTripForOption(
+  option: Pick<AwardOption, "availabilityId" | "cabin">,
+  trips: TripSummary[],
+): TripSummary | undefined {
+  const matches = trips.filter((trip) => trip.availabilityId === option.availabilityId);
+  const exactCabin = matches.filter((trip) => trip.cabin === option.cabin);
+  const unknownCabin = matches.filter((trip) => !trip.cabin);
+  const candidates = exactCabin.length > 0
+    ? exactCabin
+    : unknownCabin.length > 0
+      ? unknownCabin
+      : matches;
+  return [...candidates].sort(compareCanonicalTrips)[0];
+}
 
 function connectionDetails(trip: Trip): Array<{ airport: string; layoverMinutes?: number }> {
   const segments = trip.AvailabilitySegments ?? [];

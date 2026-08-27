@@ -263,6 +263,21 @@ describe("buildSynthesisContext", () => {
     expect(ctx).toContain("taxesCurrency=USD");
   });
 
+  it("exposes only the canonical flight pairing that the recommendation card displays", () => {
+    const s = state({
+      tripSummaries: [
+        { availabilityId: "a1", tripId: "short", cabin: "business", flightNumbers: ["AS1327", "AS823"], aircraft: [], carriers: ["AS"], stops: 1, durationMinutes: 886, connections: [{ airport: "SEA", layoverMinutes: 118 }] },
+        { availabilityId: "a1", tripId: "long", cabin: "business", flightNumbers: ["AS580", "AS823"], aircraft: [], carriers: ["AS"], stops: 1, durationMinutes: 1080, connections: [{ airport: "SEA", layoverMinutes: 312 }] },
+      ],
+    });
+
+    const ctx = buildSynthesisContext(s);
+    expect(ctx).toContain("flights=AS1327,AS823");
+    expect(ctx).toContain("connections=SEA(118m)");
+    expect(ctx).not.toContain("AS580");
+    expect(ctx).not.toContain("SEA(312m)");
+  });
+
   it("surfaces an unresolved place name rather than silently searching without it", () => {
     const s = state({
       searchPlan: {

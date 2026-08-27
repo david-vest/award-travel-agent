@@ -9,7 +9,7 @@ import {
   type CacheStore,
 } from "../../tools/seats-aero/response-cache";
 import { withTracing } from "../../tools/seats-aero/traced";
-import { normalizeResults, type AwardOption, type TripSummary } from "../../tools";
+import { canonicalTripForOption, normalizeResults, type AwardOption, type TripSummary } from "../../tools";
 import { mongoClient, DB_NAME } from "../../rag/store";
 import { probesFromPlan } from "./plan-discovery";
 import { AIRPORTS } from "../../tools/locations/data";
@@ -271,8 +271,9 @@ export function needsPositioningSearch(state: AgentStateType): boolean {
     state.positioningSearchComplete ||
     !state.searchPlan
   ) return false;
-  const trips = new Map((state.tripSummaries ?? []).map((trip) => [trip.availabilityId, trip]));
-  return !(state.awardResults ?? []).some((option) => reasonableOption(option, state.searchPlan!, trips.get(option.availabilityId), true));
+  const trips = state.tripSummaries ?? [];
+  return !(state.awardResults ?? []).some((option) =>
+    reasonableOption(option, state.searchPlan!, canonicalTripForOption(option, trips), true));
 }
 
 async function runRouteAttempt(client: SeatsAeroClient, plan: SearchPlan, attempt: RouteAttempt): Promise<AwardOption[]> {

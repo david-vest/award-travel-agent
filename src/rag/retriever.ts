@@ -1,4 +1,4 @@
-import type { AwardOption, TripSummary } from "../tools";
+import { canonicalTripForOption, type AwardOption, type TripSummary } from "../tools";
 import type { Document } from "@langchain/core/documents";
 import type { ScoringDimension } from "./frontmatter";
 import { SCORING_DIMENSIONS } from "./frontmatter";
@@ -237,13 +237,8 @@ type CandidateContext = {
   routes: string[];
 };
 
-function tripFor(option: AwardOption, trips: TripSummary[]): TripSummary | undefined {
-  const matches = trips.filter((trip) => trip.availabilityId === option.availabilityId);
-  return matches.find((trip) => !trip.cabin || trip.cabin === option.cabin) ?? matches[0];
-}
-
 function candidateContext(option: AwardOption, trips: TripSummary[], creditPrograms: string[] = []): CandidateContext {
-  const trip = tripFor(option, trips);
+  const trip = canonicalTripForOption(option, trips);
   const carriers = uniq(
     (trip?.carriers?.length ? trip.carriers : option.airlines.split(","))
       .map((carrier) => carrier.trim().toUpperCase()),

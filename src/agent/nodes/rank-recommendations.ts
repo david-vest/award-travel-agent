@@ -6,7 +6,7 @@ import type {
 import type { CandidateAssessment } from "../../domain/candidate-assessment";
 import { awardProgramForSource } from "../../domain/programs";
 import { defaultRecommendationPreferences } from "../../domain/recommendation-preferences";
-import type { AwardOption, TripSummary } from "../../tools";
+import { canonicalTripForOption, type AwardOption, type TripSummary } from "../../tools";
 import { optionId } from "../../rag/retriever";
 import type { AgentStateType } from "../state";
 import { filterByPointBalances } from "./search";
@@ -221,11 +221,10 @@ function recommendationReason(candidate: Candidate, cheapest: Candidate, leading
 
 export async function rankRecommendations(state: AgentStateType): Promise<Partial<AgentStateType>> {
   const plan = state.searchPlan;
-  const tripByAvailability = new Map((state.tripSummaries ?? []).map((trip) => [trip.availabilityId, trip]));
   const assessableOptions = state.candidateShortlist === undefined ? state.awardResults ?? [] : state.candidateShortlist;
   const budgetEligibleOptions = plan ? filterByPointBalances(assessableOptions, plan) : assessableOptions;
   const eligible = budgetEligibleOptions.flatMap((option) => {
-    const trip = tripByAvailability.get(option.availabilityId);
+    const trip = canonicalTripForOption(option, state.tripSummaries ?? []);
     const taxes = effectiveTaxes(option, trip);
     if (plan?.maxTaxesFeesUsd != null && taxes?.currency === "USD" && taxes.amount > plan.maxTaxesFeesUsd) return [];
     const seats = option.remainingSeats ?? trip?.remainingSeats;
