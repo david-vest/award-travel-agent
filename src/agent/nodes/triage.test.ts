@@ -80,7 +80,7 @@ describe("triage", () => {
     expect(result).toEqual({ intent: "knowledge" });
   });
 
-  it.each(["make it cheaper", "prioritize the seat", "avoid long layovers"])(
+  it.each(["make it cheaper", "prioritize the seat", "prioritize the best seat", "avoid long layovers"])(
     "deterministically reuses verified recommendations for: %s",
     async (text) => {
       const result = await triage({

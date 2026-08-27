@@ -5,20 +5,53 @@ import { createHash } from "node:crypto";
 import { execSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { Client } from "langsmith";
-import { evaluate } from "langsmith/evaluation";
+import { evaluate, type EvaluatorT } from "langsmith/evaluation";
+import { getCurrentRunTree } from "langsmith/traceable";
 import { HumanMessage } from "@langchain/core/messages";
 import type { BaseChannel, BinaryOperatorAggregate } from "@langchain/langgraph";
 import { triage } from "../src/agent/nodes/triage";
 import { planSearch } from "../src/agent/nodes/plan-search";
-import { setSeatsAeroClientFactory } from "../src/agent/nodes/search";
+import {
+  resetSeatsAeroClientForTests,
+  setSeatsAeroClientFactory,
+} from "../src/agent/nodes/search";
 import { ReplaySeatsAeroClient } from "../src/tools/seats-aero/replay";
 import { buildGraphWithoutCheckpointer } from "../src/agent/graph";
-import { AgentState, type SearchPlan } from "../src/agent/state";
+import { AgentState, type AgentStateType, type SearchPlan } from "../src/agent/state";
 import { RECOMMENDATION_PIPELINE_VERSION } from "../src/domain/recommendation-preferences";
+import { rankRecommendations } from "../src/agent/nodes/rank-recommendations";
+import { assessCandidateExperience } from "../src/agent/nodes/assess-candidate-experience";
+import { synthesize } from "../src/agent/nodes/synthesize";
+import { applyFlightControls, DEFAULT_FLIGHT_FILTERS, FLIGHT_SORT_OPTIONS } from "../app/flight-results";
+import { UsageTracker } from "../src/cost/usage-callback";
 import { exactIntent } from "./evaluators/exact-intent";
 import { planSimilarity } from "./evaluators/plan-similarity";
 import { hallucinationCheck } from "./evaluators/hallucination";
 import { helpfulnessJudge } from "./evaluators/helpfulness";
+import { deterministicV1Order } from "./baselines/deterministic-v1";
+import {
+  costExtremeWinner,
+  experienceWeightMonotonicity,
+  hardConstraintCompliance,
+  hybridPreferenceWinner,
+  operationalHealth,
+  preferenceOnlyNoSearch,
+  recommendationIdValidity,
+  rerankPreferenceFit,
+  sortPreservesServerRanks,
+  structuredAssessmentStability,
+} from "./evaluators/recommendation-invariants";
+import {
+  explanationQualityJudge,
+  preferencePairwiseJudge,
+} from "./evaluators/recommendation-judges";
+import type {
+  OperationalMetrics,
+  RecommendationEvalOutput,
+  RecommendationFixture,
+  RerankingEvalOutput,
+  RerankingFixture,
+} from "./recommendation-types";
 
 const client = new Client();
 
@@ -132,7 +165,11 @@ const THRESHOLDS: Record<string, number> = {
   "intent-routing": 0.95,
   "search-planning": 0.85,
   groundedness: 0.8,
+  "recommendation-ranking": 0.85,
+  "recommendation-reranking": 0.9,
 };
+
+let recommendationReleaseGateFailed = false;
 
 function experimentMetadata(): Record<string, unknown> {
   let gitSha: string | undefined;
@@ -145,8 +182,256 @@ function experimentMetadata(): Record<string, unknown> {
     mode: "replay", // Evals never touch the live API; replay keeps them reproducible.
     environment: process.env.NODE_ENV ?? "development",
     rankingVersion: RECOMMENDATION_PIPELINE_VERSION,
+    trackedMetrics: ["latency_ms", "model_tokens", "retrieval_degradations", "provider_calls"],
     ...(gitSha ? { gitSha } : {}),
   };
+}
+
+function scoreForKey(
+  results: { results: Array<{ evaluationResults: { results: Array<{ key?: string; score?: number | boolean | null }> } }> },
+  key: string,
+): number {
+  if (results.results.length === 0) return 0;
+  const scores = results.results.map((row) => {
+    const score = row.evaluationResults.results.find((result) => result.key === key)?.score;
+    return typeof score === "number" ? score : 0;
+  });
+  return scores.reduce((sum, score) => sum + score, 0) / results.results.length;
+}
+
+export function averageExpectedScores(
+  results: { results: Array<{ evaluationResults: { results: Array<{ key?: string; score?: number | boolean | null }> } }> },
+  keys: string[],
+): number {
+  if (keys.length === 0) return 0;
+  return keys.reduce((sum, key) => sum + scoreForKey(results, key), 0) / keys.length;
+}
+
+function modelTokensInCurrentTrace(): number {
+  try {
+    const root = getCurrentRunTree(true);
+    if (!root) return 0;
+    const visit = (run: typeof root): number => {
+      const usage = run.outputs?.usage_metadata as {
+        input_tokens?: number;
+        output_tokens?: number;
+        total_tokens?: number;
+      } | undefined;
+      const own = run.run_type === "llm"
+        ? usage?.total_tokens ?? (usage?.input_tokens ?? 0) + (usage?.output_tokens ?? 0)
+        : 0;
+      return own + run.child_runs.reduce((sum, child) => sum + visit(child), 0);
+    };
+    return visit(root);
+  } catch {
+    return 0;
+  }
+}
+
+function totalTrackedTokens(tracker: UsageTracker): number {
+  const usage = tracker.total();
+  return usage.inputTokens + usage.outputTokens
+    + usage.cacheCreationInputTokens + usage.cacheReadInputTokens;
+}
+
+function attachOperationalMetadata(metrics: OperationalMetrics): void {
+  try {
+    const run = getCurrentRunTree(true);
+    if (!run) return;
+    run.metadata = {
+      ...run.metadata,
+      latency_ms: metrics.latencyMs,
+      model_tokens: metrics.modelTokens,
+      retrieval_degradations: metrics.retrievalDegradations,
+      provider_calls: metrics.providerCalls,
+    };
+  } catch {
+    // Evaluation metadata must not alter the target behavior.
+  }
+}
+
+function fixtureState(input: RecommendationFixture): AgentStateType {
+  return {
+    messages: [new HumanMessage(input.question)],
+    intent: "route_search",
+    searchPlan: input.searchPlan,
+    awardResults: input.awardResults,
+    candidateShortlist: input.candidateShortlist ?? input.awardResults,
+    tripSummaries: input.tripSummaries,
+    optionEvidence: input.optionEvidence,
+    kbDocs: [...new Map(Object.values(input.optionEvidence).flat().map((doc) => [doc.id, doc])).values()],
+    candidateAssessments: input.candidateAssessments,
+    recommendationPreferences: input.recommendationPreferences,
+    searchStatus: "searched",
+    degradedReasons: [],
+  } as unknown as AgentStateType;
+}
+
+async function recommendationTarget(input: RecommendationFixture): Promise<RecommendationEvalOutput> {
+  const started = performance.now();
+  const usage = new UsageTracker();
+  const modelConfig = { callbacks: [usage] };
+  const state = fixtureState(input);
+  const hybridUpdate = await rankRecommendations(state);
+  const hybrid = hybridUpdate.recommendations ?? [];
+  const costUpdate = await rankRecommendations({
+    ...state,
+    recommendationPreferences: { ...input.recommendationPreferences, experienceWeight: 0 },
+  });
+  const journeyUpdate = await rankRecommendations({
+    ...state,
+    recommendationPreferences: { ...input.recommendationPreferences, experienceWeight: 100 },
+  });
+
+  const assessmentRuns = [];
+  let assessmentDegraded = false;
+  if (input.runAssessmentStability) {
+    for (let repetition = 0; repetition < 2; repetition += 1) {
+      const assessed = await assessCandidateExperience(state, modelConfig);
+      assessmentRuns.push(assessed.candidateAssessments ?? {});
+      assessmentDegraded ||= (assessed.degradedReasons ?? []).includes("candidate_assessment_failed");
+    }
+  }
+
+  const rankedState = { ...state, ...hybridUpdate } as AgentStateType;
+  const draft = (await synthesize(rankedState, modelConfig)).draft ?? "";
+  const metrics: OperationalMetrics = {
+    latencyMs: Math.round(performance.now() - started),
+    modelTokens: totalTrackedTokens(usage) || modelTokensInCurrentTrace(),
+    providerCalls: 0,
+    retrievalDegradations: assessmentDegraded ? 1 : 0,
+  };
+  attachOperationalMetadata(metrics);
+
+  return {
+    hybrid,
+    costExtreme: costUpdate.recommendations ?? [],
+    journeyExtreme: journeyUpdate.recommendations ?? [],
+    deterministicV1Order: deterministicV1Order(state),
+    sortedViews: Object.fromEntries(FLIGHT_SORT_OPTIONS.map(({ value }) => [
+      value,
+      applyFlightControls(hybrid, value, DEFAULT_FLIGHT_FILTERS),
+    ])),
+    draft,
+    state: { ...rankedState, draft },
+    assessmentRuns,
+    assessmentDegraded,
+    metrics,
+  };
+}
+
+async function rerankingTarget(input: RerankingFixture): Promise<RerankingEvalOutput> {
+  const started = performance.now();
+  const usage = new UsageTracker();
+  let providerCalls = 0;
+  resetSeatsAeroClientForTests();
+  setSeatsAeroClientFactory(() => {
+    providerCalls += 1;
+    return new ReplaySeatsAeroClient();
+  });
+  try {
+    const graph = buildGraphWithoutCheckpointer();
+    const state = await graph.invoke({
+      messages: [new HumanMessage(input.followUp)],
+      searchPlan: input.searchPlan,
+      recommendationSnapshot: input.snapshot,
+    }, { callbacks: [usage] });
+    const metrics: OperationalMetrics = {
+      latencyMs: Math.round(performance.now() - started),
+      modelTokens: totalTrackedTokens(usage) || modelTokensInCurrentTrace(),
+      providerCalls,
+      retrievalDegradations: state.degradedReasons?.length ?? 0,
+    };
+    attachOperationalMetadata(metrics);
+    return {
+      recommendations: state.recommendations ?? [],
+      recommendationPreferences: state.recommendationPreferences,
+      searchRan: providerCalls > 0,
+      draft: state.draft ?? "",
+      state,
+      metrics,
+    };
+  } finally {
+    resetSeatsAeroClientForTests();
+  }
+}
+
+async function runRecommendationRanking(): Promise<number> {
+  const name = "award-travel-recommendation-ranking";
+  await seedDataset(name, await loadJsonl("recommendation-ranking"));
+  const evaluatorKeys = [
+    "hard_constraint_compliance",
+    "recommendation_id_validity",
+    "cost_extreme_winner",
+    "hybrid_preference_winner",
+    "experience_weight_monotonicity",
+    "sort_rank_immutability",
+    "structured_assessment_stability",
+    "groundedness",
+    "preference_pairwise",
+    "explanation_quality",
+    "operational_health",
+  ];
+  const results = await evaluate(
+    async (input: Record<string, unknown>) => (
+      await recommendationTarget(input as unknown as RecommendationFixture)
+    ) as unknown as Record<string, unknown>,
+    {
+      data: name,
+      evaluators: [
+        hardConstraintCompliance,
+        recommendationIdValidity,
+        costExtremeWinner,
+        hybridPreferenceWinner,
+        experienceWeightMonotonicity,
+        sortPreservesServerRanks,
+        structuredAssessmentStability,
+        hallucinationCheck,
+        preferencePairwiseJudge,
+        explanationQualityJudge,
+        operationalHealth,
+      ] as unknown as EvaluatorT[],
+      experimentPrefix: "recommendation-ranking",
+      metadata: experimentMetadata(),
+      maxConcurrency: 2,
+    },
+  );
+  const hardConstraints = scoreForKey(results, "hard_constraint_compliance");
+  const idValidity = scoreForKey(results, "recommendation_id_validity");
+  recommendationReleaseGateFailed ||= hardConstraints < 1 || idValidity < 1;
+  // A crashed or missing evaluator is a zero, never an invisible omission
+  // that makes the remaining scores look better.
+  const score = averageExpectedScores(results, evaluatorKeys);
+  process.stdout.write(`\nRecommendation ranking complete — average ${score.toFixed(2)}, hard constraints ${hardConstraints.toFixed(2)}, ids ${idValidity.toFixed(2)}.\n`);
+  return score;
+}
+
+async function runRecommendationReranking(): Promise<number> {
+  const name = "award-travel-recommendation-reranking";
+  await seedDataset(name, await loadJsonl("recommendation-reranking"));
+  const results = await evaluate(
+    async (input: Record<string, unknown>) => (
+      await rerankingTarget(input as unknown as RerankingFixture)
+    ) as unknown as Record<string, unknown>,
+    {
+      data: name,
+      evaluators: [preferenceOnlyNoSearch, rerankPreferenceFit, operationalHealth] as unknown as EvaluatorT[],
+      experimentPrefix: "recommendation-reranking",
+      metadata: experimentMetadata(),
+      // The provider factory is deliberately instrumented process-wide, so
+      // serial execution prevents one example from observing another's counter.
+      maxConcurrency: 1,
+    },
+  );
+  const noSearch = scoreForKey(results, "preference_only_no_search");
+  recommendationReleaseGateFailed ||= noSearch < 1;
+  const score = averageExpectedScores(results, [
+    "preference_only_no_search",
+    "rerank_preference_fit",
+    "operational_health",
+  ]);
+  process.stdout.write(`\nRecommendation reranking complete — average ${score.toFixed(2)}, no-search ${noSearch.toFixed(2)}.\n`);
+  return score;
 }
 
 async function runIntentRouting(): Promise<number> {
@@ -268,9 +553,15 @@ async function main(): Promise<void> {
   if (which === "all" || which === "intent") scores["intent-routing"] = await runIntentRouting();
   if (which === "all" || which === "planning") scores["search-planning"] = await runSearchPlanning();
   if (which === "all" || which === "grounded") scores.groundedness = await runGroundedness();
+  if (which === "all" || which === "recommendations" || which === "ranking") {
+    scores["recommendation-ranking"] = await runRecommendationRanking();
+  }
+  if (which === "all" || which === "recommendations" || which === "reranking") {
+    scores["recommendation-reranking"] = await runRecommendationReranking();
+  }
 
   process.stdout.write("\n--- Summary ---\n");
-  let anyBelowThreshold = false;
+  let anyBelowThreshold = recommendationReleaseGateFailed;
   for (const [stage, score] of Object.entries(scores)) {
     const threshold = THRESHOLDS[stage];
     const pass = score >= threshold;
@@ -280,6 +571,9 @@ async function main(): Promise<void> {
     );
   }
   if (anyBelowThreshold) {
+    if (recommendationReleaseGateFailed) {
+      process.stdout.write("\nRelease gate failed: hard constraints, id validity, and preference-only no-search must each be 100%.\n");
+    }
     process.stdout.write("\nOne or more stages fell below its threshold.\n");
     process.exitCode = 1;
   }

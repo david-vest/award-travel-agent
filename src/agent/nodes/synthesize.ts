@@ -1,4 +1,5 @@
 import { chat } from "../models";
+import type { RunnableConfig } from "@langchain/core/runnables";
 import { cachedSystem } from "../cache";
 import { SYNTHESIZE_PROMPT } from "../prompts/synthesize";
 import type { AgentStateType } from "../state";
@@ -235,6 +236,7 @@ export function buildSynthesisContext(state: AgentStateType): string {
 
 export async function synthesize(
   state: AgentStateType,
+  config?: RunnableConfig,
 ): Promise<Partial<AgentStateType>> {
   if (state.intent !== "knowledge" && (state.awardResults?.length ?? 0) === 0) {
     return { draft: buildNoFlightsDraft(state) };
@@ -245,7 +247,7 @@ export async function synthesize(
     const res = await model.invoke([
       cachedSystem(SYNTHESIZE_PROMPT),
       { role: "user", content: buildSynthesisContext(state) },
-    ]);
+    ], config);
 
     const text =
       typeof res.content === "string"

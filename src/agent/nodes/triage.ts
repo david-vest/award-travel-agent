@@ -46,6 +46,11 @@ export function lastUserText(state: AgentStateType): string {
  */
 export const CONVERSATION_CONTEXT_MAX_TOKENS = 1500;
 
+/** Deterministic vocabulary for soft follow-ups that can reuse a ranked snapshot. */
+export function isPreferenceOnlyRerank(text: string): boolean {
+  return /\b(?:make it cheaper|cheaper|lower (?:cost|points|miles|fees)|value first|prioriti[sz]e (?:the )?(?:best )?(?:seat|cabin|schedule|experience|connections?|booking)|better (?:seat|cabin|schedule|experience)|fewer stops?|avoid (?:early|late|long layovers?)|easier (?:connections?|booking)|lower transfer risk|journey first)\b/i.test(text);
+}
+
 /**
  * Prior turns give a planner/classifier the context to resolve a bare
  * "Tokyo" or a follow-up like "actually nonstop only". Exported so other
@@ -82,7 +87,7 @@ export async function triage(
   const text = lastUserText(state);
 
   const hardSearchChange = /\b(?:nonstop only|direct only|no stops?|up to one stop|economy|premium economy|business class|first class|\d+\s+(?:traveler|travelers|people|passengers)|(?:use|only|exclude)\s+[a-z]+\s+(?:miles|points)|(?:from\s+.+\s+to|to\s+[A-Z]{3}\b)|(?:january|february|march|april|may|june|july|august|september|october|november|december)|\d{4}-\d{2}-\d{2})\b/i.test(text);
-  const preferenceOnly = /\b(?:make it cheaper|cheaper|lower (?:cost|points|miles|fees)|value first|prioriti[sz]e (?:the )?(?:seat|cabin|schedule|experience|connections?|booking)|better (?:seat|cabin|schedule|experience)|fewer stops?|avoid (?:early|late|long layovers?)|easier (?:connections?|booking)|lower transfer risk|journey first)\b/i.test(text);
+  const preferenceOnly = isPreferenceOnlyRerank(text);
   if (state.recommendationSnapshot && hardSearchChange) return { intent: "route_search" };
   if (state.recommendationSnapshot && preferenceOnly && !hardSearchChange) {
     return { intent: "rerank" };

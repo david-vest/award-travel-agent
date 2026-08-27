@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { BaseLanguageModelInput } from "@langchain/core/language_models/base";
+import type { RunnableConfig } from "@langchain/core/runnables";
 import { plainSystem } from "../cache";
 import { chat } from "../models";
 import { ASSESS_CANDIDATES_PROMPT } from "../prompts/assess-candidates";
@@ -156,18 +157,20 @@ function assessmentBatches(
 }
 
 async function assessBatch(
-  model: { invoke: (messages: BaseLanguageModelInput) => Promise<unknown> },
+  model: { invoke: (messages: BaseLanguageModelInput, config?: RunnableConfig) => Promise<unknown> },
   evidenceByOption: Record<string, RetrievedDoc[]>,
+  config?: RunnableConfig,
 ): Promise<CandidateAssessments> {
   const raw = candidateAssessmentOutputSchema.parse(await model.invoke([
     plainSystem(ASSESS_CANDIDATES_PROMPT),
     { role: "user", content: assessmentInput(evidenceByOption) },
-  ]));
+  ], config));
   return validateCandidateAssessments(raw, evidenceByOption);
 }
 
 export async function assessCandidateExperience(
   state: AgentStateType,
+  config?: RunnableConfig,
 ): Promise<Partial<AgentStateType>> {
   const options = state.candidateShortlist === undefined
     ? state.awardResults ?? []
@@ -197,7 +200,7 @@ export async function assessCandidateExperience(
       batchResults.push(...await Promise.allSettled(
         batches
           .slice(index, index + CANDIDATE_ASSESSMENT_CONCURRENCY)
-          .map((batch) => assessBatch(model, batch)),
+          .map((batch) => assessBatch(model, batch, config)),
       ));
     }
     const successful = batchResults.flatMap((result) =>

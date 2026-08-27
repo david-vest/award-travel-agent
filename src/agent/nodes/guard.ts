@@ -62,6 +62,33 @@ const RESET_TURN_STATE: Partial<AgentStateType> = {
   clarificationResolution: null,
 };
 
+/**
+ * Keep only high-confidence denials in code. Ambiguous language should reach
+ * the travel graph, especially on a follow-up turn where "the second one" or
+ * "best seat" is meaningful only because a recommendation snapshot exists.
+ */
+export function obviousGuardRejection(text: string): string | null {
+  const promptAttack = /\b(?:ignore|override|bypass|reveal|show|print|repeat|leak|extract)\b.{0,60}\b(?:instructions?|system prompt|developer message|hidden prompt|secrets?|credentials?|api keys?|environment variables?)\b/i.test(text)
+    || /\b(?:system prompt|developer message|hidden instructions?)\b.{0,60}\b(?:reveal|show|print|repeat|leak|extract)\b/i.test(text)
+    || /\b(?:read|open|access|dump|exfiltrate|send|list|give me|what are)\b.{0,50}\b(?:\.env|ssh keys?|passwords?|secrets?|credentials?|api keys?|environment variables?)\b/i.test(text);
+  if (promptAttack) {
+    return "I can’t reveal or override system instructions, but I can help with award travel.";
+  }
+
+  const codeTask = /\b(?:write|build|debug|fix|refactor|implement|compile|execute|run)\b.{0,40}\b(?:code|script|program|function|sql|regex|python|javascript|typescript|java|c\+\+|html|css)\b/i.test(text)
+    || /\b(?:code|programming|software)\s+(?:question|homework|assignment)\b/i.test(text);
+  const mathHomework = /\b(?:math|algebra|geometry|calculus|trigonometry|statistics)\s+(?:homework|problem|assignment|question)\b/i.test(text)
+    || /\b(?:solve|differentiate|integrate|factor)\b.{0,30}\b(?:equation|polynomial|derivative|integral|for\s+x)\b/i.test(text)
+    || /^\s*what(?:'s| is)\s+[-+*/().\d\s]+\??\s*$/i.test(text);
+  const clearlyUnrelated = /\b(?:write me|tell me|give me)\b.{0,25}\b(?:joke|poem|recipe|cover letter|short story)\b/i.test(text)
+    || /\b(?:diagnose|medical advice|legal advice|lawsuit|tax advice)\b/i.test(text);
+
+  if (codeTask || mathHomework || clearlyUnrelated) {
+    return "I can only help with award travel, flights, points, and mileage programs.";
+  }
+  return null;
+}
+
 export async function guardInput(
   state: AgentStateType,
 ): Promise<Partial<AgentStateType>> {
@@ -90,6 +117,20 @@ export async function guardInput(
 
   // Nothing to screen. Let triage deal with the empty case.
   if (text.trim().length === 0) return { ...resetTurnState, intent: null };
+
+  const obviousRejection = obviousGuardRejection(text);
+  if (obviousRejection) {
+    return { ...resetTurnState, intent: "rejected", refusalReason: obviousRejection };
+  }
+
+  // Once a verified recommendation snapshot exists, short and ambiguous
+  // phrases are normal conversation, not suspicious input. Triage has the
+  // context needed to decide whether the user wants a rerank, explanation, or
+  // fresh search. Avoid spending a guard-model call that sees only the phrase
+  // and tends to reject useful requests such as "best seat" or "why not #2?".
+  if (state.recommendationSnapshot) {
+    return { ...resetTurnState, intent: null, refusalReason: null };
+  }
 
   // thinking:"adaptive" + withStructuredOutput's forced tool calling don't
   // always compose cleanly (see models.ts). A guard failure should not block

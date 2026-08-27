@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { contentHash } from "./run";
+import { averageExpectedScores, contentHash } from "./run";
 
 describe("contentHash", () => {
   it("[REGRESSION] produces the same hash for identical content, so an unchanged dataset is never needlessly resynced", () => {
@@ -17,5 +17,16 @@ describe("contentHash", () => {
     const a = [{ input: { question: "a" }, expected: {} }, { input: { question: "b" }, expected: {} }];
     const b = [{ input: { question: "b" }, expected: {} }, { input: { question: "a" }, expected: {} }];
     expect(contentHash(a)).not.toBe(contentHash(b));
+  });
+});
+
+describe("averageExpectedScores", () => {
+  it("scores a missing or crashed evaluator as zero instead of silently dropping it", () => {
+    const results = {
+      results: [{
+        evaluationResults: { results: [{ key: "present", score: 1 }] },
+      }],
+    };
+    expect(averageExpectedScores(results, ["present", "missing"])).toBe(0.5);
   });
 });
