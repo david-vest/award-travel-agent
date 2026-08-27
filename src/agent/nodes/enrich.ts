@@ -3,7 +3,7 @@ import { makeGetTripDetailsTool, type TripSummary } from "../../tools";
 import type { AgentStateType } from "../state";
 import { getClient } from "./search";
 
-/** How many ranked results get full trip detail (connections, schedule, duration, flight numbers, taxes). */
+/** How many shortlisted results get full trip detail (connections, schedule, duration, flight numbers, taxes). */
 export const ENRICH_DISPLAY_CAP = 20;
 
 /** Small enough to avoid a rate-limit burst while still fetching everything quickly. */
@@ -20,7 +20,12 @@ const BACKFILL_CONCURRENCY = 3;
 export async function enrichTrips(
   state: AgentStateType,
 ): Promise<Partial<AgentStateType>> {
-  const displayed = (state.awardResults ?? []).slice(0, ENRICH_DISPLAY_CAP);
+  // Direct unit callers from before Phase 3 may omit candidateShortlist;
+  // compiled graphs always populate it through build_candidate_shortlist.
+  const displayed = (state.candidateShortlist === undefined
+    ? state.awardResults ?? []
+    : state.candidateShortlist
+  ).slice(0, ENRICH_DISPLAY_CAP);
   if (displayed.length === 0) return { tripSummaries: [] };
 
   const client = await getClient();

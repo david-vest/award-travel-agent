@@ -54,6 +54,19 @@ describe("enrichTrips", () => {
     expect(toolInvoke).toHaveBeenCalledTimes(3);
   });
 
+  it("enriches the coverage shortlist rather than the provider-ordered raw results", async () => {
+    const toolInvoke = vi.fn().mockResolvedValue(JSON.stringify({ trips: [] }));
+    vi.mocked(makeGetTripDetailsTool).mockReturnValue({ invoke: toolInvoke } as never);
+
+    await enrichTrips({
+      awardResults: [opt({ availabilityId: "cheapest" })],
+      candidateShortlist: [opt({ availabilityId: "preferred-carrier" })],
+    } as AgentStateType);
+
+    expect(toolInvoke).toHaveBeenCalledWith({ availabilityId: "preferred-carrier" });
+    expect(toolInvoke).toHaveBeenCalledTimes(1);
+  });
+
   it("looks up each id exactly once", async () => {
     const toolInvoke = vi.fn().mockResolvedValue(JSON.stringify({ trips: [] }));
     vi.mocked(makeGetTripDetailsTool).mockReturnValue({ invoke: toolInvoke } as never);

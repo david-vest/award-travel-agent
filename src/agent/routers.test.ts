@@ -67,12 +67,12 @@ describe("routeAfterSearch", () => {
 
   it("skips refresh on discovery", () => {
     expect(routeAfterSearch(s({ ...base, intent: "discovery" }))).toBe(
-      "enrich_trips",
+      "build_candidate_shortlist",
     );
   });
 
   it("skips refresh when there are no results", () => {
-    expect(routeAfterSearch(s({ ...base, awardResults: [] }))).toBe("enrich_trips");
+    expect(routeAfterSearch(s({ ...base, awardResults: [] }))).toBe("build_candidate_shortlist");
   });
 });
 

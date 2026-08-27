@@ -21,7 +21,7 @@ make dev                 # http://localhost:3000
 
 | Requirement | Where |
 |---|---|
-| LangGraph for state and control flow | 15-node graph, `Annotation.Root` state, conditional routing on intent/violations/staleness — [`src/agent/graph.ts`](src/agent/graph.ts), [`src/agent/state.ts`](src/agent/state.ts) |
+| LangGraph for state and control flow | 19-node graph, `Annotation.Root` state, conditional routing on intent/violations/staleness — [`src/agent/graph.ts`](src/agent/graph.ts), [`src/agent/state.ts`](src/agent/state.ts) |
 | LangChain for model calls, tools, RAG | `ChatAnthropic` throughout, a typed LangChain tool at the provider boundary, `MongoDBAtlasVectorSearch` for RAG |
 | LangSmith tracing | Automatic per-node graph tracing (real API key required) plus a manual wrapper adding a child span per seats.aero HTTP call — [`src/tools/seats-aero/traced.ts`](src/tools/seats-aero/traced.ts) |
 | Solves a problem end to end | Real seats.aero data + a real knowledge base; runs live by default, falls back to recorded fixtures with no seats.aero key at all |
@@ -64,10 +64,12 @@ flowchart TD
   API --> Guard["guard_input"]
   Guard --> Resolve["resolve_ui_locations"]
   Resolve --> Form["prepare_ui_search"]
-  Form --> Search["search_awards tool"]
-  Search --> Enrich["enrich_trips"]
+  Form --> Preferences["interpret_preferences"]
+  Preferences --> Search["search_awards tool"]
+  Search --> Shortlist["build_candidate_shortlist"]
+  Shortlist --> Enrich["enrich_trips"]
   Enrich -->|"exact option is weak"| Position["search_positioning"]
-  Position --> Enrich
+  Position --> Shortlist
   Enrich --> RAG["retrieve_knowledge"]
   RAG --> Rank["rank_recommendations"]
   Rank --> Synthesize["synthesize + verify"]
@@ -79,7 +81,9 @@ The form is validated with a shared Zod contract and is converted directly into 
 
 A follow-up chat message instead goes through the conversational planner: `triage` classifies intent and picks one of two planners — structured extraction (`plan_search`) for a precise request like "business class ORD to Tokyo," or candidate generation under a budget (`plan_discovery`) for an open-ended one like "where should I go this summer?" — or skips both straight to `retrieve_knowledge` for a pure knowledge question like "does Chase transfer to Alaska?"
 
-The ranking node is deliberately deterministic and inspectable. It accounts for points cost, stop preference, the actual number of stops, known total layover time, preferred airlines, and known seats relative to traveler count. The best option appears first; every other valid option remains in the horizontal comparison rail. Facts on cards come from provider output or enrichment, while the narrative is grounded against graph state.
+Soft ranking language is interpreted by a low-cost structured-output model, then merged into the slider/chip seed under code-owned bounds. A keyword fallback produces the same typed profile during a model outage, and neither path can modify search constraints. Before enrichment, a deterministic coverage selector applies hard eligibility and preserves candidates across value, nonstop/stops, preferred carrier, program, date, route tier, fees, and known carrier/aircraft dimensions. This prevents provider cost ordering from spending all detail calls on similar cheap options.
+
+The current ranking node remains deterministic and inspectable. It accounts for points cost, stop preference, the actual number of stops, known total layover time, preferred airlines, and known seats relative to traveler count. Only shortlisted options become recommendation cards; the larger raw set remains in graph state for audit. Facts on cards come from provider output or enrichment, while the narrative is grounded against graph state.
 
 Because Seats.aero indexes route pairs rather than arbitrary connecting itineraries, Roam uses a bounded positioning ladder when the exact route has no strong option. For example, ORD→FUK broadens to ORD→TYO/JPN, then USA→JPN, and finally USA→ASA. The quality gate considers points, fees, duration, stops, and known seat count. A run can spend at most four Seats.aero route-search calls, and every broadened result is labeled with the separate positioning segment(s) it requires.
 
@@ -95,7 +99,7 @@ Because Seats.aero indexes route pairs rather than arbitrary connecting itinerar
 
 **Groundedness is checked deterministically, not by an LLM judge.** After synthesis, every mileage figure, flight number, and airline code in the draft is extracted with a regex and checked for set membership against the actual tool results already in state. "Did the model invent a flight number" is a lookup, not a judgment call — and a lookup can't itself hallucinate a verdict the way a second model call could. One violation triggers exactly one retry; if the retry is still ungrounded, the graph degrades to a plain listing of the real data rather than looping or shipping an unverified claim.
 
-**The trip-detail provider boundary is a LangChain tool, but invocation is deterministic.** `get_trip_details` is defined with `tool()` so its name, description, Zod input contract, and trace shape remain explicit. `enrich_trips` invokes that tool for every candidate in a code-capped display pool; no model decides whether or how often to call it. Search, regional availability, refresh, and trip enrichment all spend provider quota, so their call counts are enforced in node code rather than entrusted to prompts. Models are reserved for the parts where semantic judgment changes the result: intent classification, planning, and grounded explanation.
+**The trip-detail provider boundary is a LangChain tool, but invocation is deterministic.** `get_trip_details` is defined with `tool()` so its name, description, Zod input contract, and trace shape remain explicit. `enrich_trips` invokes that tool for every candidate in a code-capped, coverage-balanced shortlist; no model decides whether or how often to call it. Search, regional availability, refresh, and trip enrichment all spend provider quota, so their call counts are enforced in node code rather than entrusted to prompts. Models are reserved for the parts where semantic judgment changes the result: intent classification, planning, soft-preference interpretation, and grounded explanation.
 
 **Cost engineering, because this runs on a personal budget.** Sonnet 5's prompt caching is applied to the system prompts long enough to clear the 1024-token minimum (the search planner and the synthesizer — Anthropic silently no-ops `cache_control` below that threshold, so `cachedSystem()` throws rather than pretending it worked). Each node calls the model at a different effort tier — low for classification, medium for the answer that actually matters. A MongoDB-backed response cache sits in front of seats.aero's own data. The detail that actually determines whether caching pays off: today's date never enters a cached system prompt — it goes in the volatile user turn instead, the same place conversation history does, because baking a value that changes daily into a prefix meant to stay stable defeats the entire point of caching it.
 

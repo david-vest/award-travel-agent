@@ -124,7 +124,9 @@ export function buildSynthesisContext(state: AgentStateType): string {
     );
   }
 
-  const allOptions = state.awardResults ?? [];
+  const allOptions = state.candidateShortlist === undefined
+    ? state.awardResults ?? []
+    : state.candidateShortlist;
   const options = allOptions.slice(0, MAX_OPTIONS_IN_CONTEXT);
   const optionNumberByAvailabilityId = new Map(options.map((option, index) => [option.availabilityId, index + 1]));
   if (options.length === 0) {

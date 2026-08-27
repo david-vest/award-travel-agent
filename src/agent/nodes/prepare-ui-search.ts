@@ -79,6 +79,7 @@ export async function prepareUiSearch(
     intent: "route_search",
     searchPlan: plan,
     awardResults: [],
+    candidateShortlist: [],
     tripSummaries: [],
     recommendations: [],
     kbDocs: [],

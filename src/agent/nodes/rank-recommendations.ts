@@ -68,7 +68,13 @@ export async function rankRecommendations(
 ): Promise<Partial<AgentStateType>> {
   const plan = state.searchPlan;
   const tripByAvailability = new Map((state.tripSummaries ?? []).map((trip) => [trip.availabilityId, trip]));
-  const budgetEligibleOptions = plan ? filterByPointBalances(state.awardResults ?? [], plan) : (state.awardResults ?? []);
+  // Compiled graphs assess only the coverage shortlist. The fallback keeps
+  // direct callers and older checkpoints usable when the Phase 3 channel is
+  // absent, but an explicit empty shortlist correctly yields no cards.
+  const assessableOptions = state.candidateShortlist === undefined
+    ? state.awardResults ?? []
+    : state.candidateShortlist;
+  const budgetEligibleOptions = plan ? filterByPointBalances(assessableOptions, plan) : assessableOptions;
   const scored = budgetEligibleOptions.map((option) => {
     const trip = tripByAvailability.get(option.availabilityId);
     const taxes = effectiveTaxes(option, trip);
@@ -169,7 +175,9 @@ export async function rankRecommendations(
 
   const order = new Map(recommendations.map((recommendation) => [recommendation.id, recommendation.rank]));
   return {
-    awardResults: [...budgetEligibleOptions].sort((a, b) => (order.get(`${a.availabilityId}:${a.cabin}`) ?? Infinity) - (order.get(`${b.availabilityId}:${b.cabin}`) ?? Infinity)),
+    // Preserve the larger raw set for audit/debugging while putting assessed
+    // options first. Only `recommendations` is user-facing.
+    awardResults: [...(state.awardResults ?? assessableOptions)].sort((a, b) => (order.get(`${a.availabilityId}:${a.cabin}`) ?? Infinity) - (order.get(`${b.availabilityId}:${b.cabin}`) ?? Infinity)),
     recommendations,
   };
 }

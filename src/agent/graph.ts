@@ -11,6 +11,8 @@ import { planSearch, currentPlanSearchClock } from "./nodes/plan-search";
 import { planDiscovery } from "./nodes/plan-discovery";
 import { searchAwards, searchPositioningOptions } from "./nodes/search";
 import { enrichTrips } from "./nodes/enrich";
+import { interpretPreferences } from "./nodes/interpret-preferences";
+import { buildCandidateShortlist } from "./nodes/build-candidate-shortlist";
 import { retrieveKnowledgeNode } from "./nodes/retrieve";
 import { rankRecommendations } from "./nodes/rank-recommendations";
 import { synthesize } from "./nodes/synthesize";
@@ -57,6 +59,8 @@ function buildStateGraph() {
     .addNode("plan_discovery", planDiscovery)
     .addNode("search_awards", searchAwards)
     .addNode("search_positioning", searchPositioningOptions)
+    .addNode("interpret_preferences", interpretPreferences)
+    .addNode("build_candidate_shortlist", buildCandidateShortlist)
     .addNode("enrich_trips", enrichTrips)
     .addNode("retrieve_knowledge", retrieveKnowledgeNode)
     .addNode("rank_recommendations", rankRecommendations)
@@ -81,19 +85,21 @@ function buildStateGraph() {
     })
 
     .addEdge("resolve_ui_locations", "prepare_ui_search")
-    .addEdge("prepare_ui_search", "search_awards")
-    .addEdge("plan_search", "search_awards")
-    .addEdge("plan_discovery", "search_awards")
+    .addEdge("prepare_ui_search", "interpret_preferences")
+    .addEdge("plan_search", "interpret_preferences")
+    .addEdge("plan_discovery", "interpret_preferences")
+    .addEdge("interpret_preferences", "search_awards")
     .addConditionalEdges("search_awards", routeAfterSearch, {
       refresh_availability: "refresh_availability",
-      enrich_trips: "enrich_trips",
+      build_candidate_shortlist: "build_candidate_shortlist",
     })
-    .addEdge("refresh_availability", "enrich_trips")
+    .addEdge("refresh_availability", "build_candidate_shortlist")
+    .addEdge("build_candidate_shortlist", "enrich_trips")
     .addConditionalEdges("enrich_trips", routeAfterEnrich, {
       search_positioning: "search_positioning",
       retrieve_knowledge: "retrieve_knowledge",
     })
-    .addEdge("search_positioning", "enrich_trips")
+    .addEdge("search_positioning", "build_candidate_shortlist")
     .addEdge("retrieve_knowledge", "rank_recommendations")
     .addEdge("rank_recommendations", "synthesize")
     .addEdge("synthesize", "verify_groundedness")

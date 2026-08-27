@@ -4,6 +4,7 @@ import { plainSystem } from "../cache";
 import { GUARD_PROMPT } from "../prompts/guard";
 import type { AgentStateType } from "../state";
 import { lastUserText } from "./triage";
+import { defaultRecommendationPreferences } from "../../domain/recommendation-preferences";
 
 export const guardSchema = z.object({
   allowed: z.boolean().describe("Whether this message should be processed"),
@@ -43,6 +44,7 @@ export const guardSchema = z.object({
  */
 const RESET_TURN_STATE: Partial<AgentStateType> = {
   awardResults: [],
+  candidateShortlist: [],
   searchStatus: "not_run",
   tripSummaries: [],
   recommendations: [],
@@ -71,6 +73,7 @@ export async function guardInput(
   // current + (-current) = 0.
   const resetTurnState: Partial<AgentStateType> = {
     ...RESET_TURN_STATE,
+    recommendationPreferences: defaultRecommendationPreferences(),
     // `state.revisionCount ? -state.revisionCount : 0` rather than
     // `-(state.revisionCount ?? 0)` — the latter produces -0 when the
     // incoming count is already 0, and -0 fails strict (Object.is) equality

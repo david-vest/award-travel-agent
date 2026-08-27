@@ -28,8 +28,8 @@ export const MAX_REVISIONS = 1;
 
 export function routeAfterSearch(
   state: AgentStateType,
-): "refresh_availability" | "enrich_trips" {
-  return shouldRefresh(state) ? "refresh_availability" : "enrich_trips";
+): "refresh_availability" | "build_candidate_shortlist" {
+  return shouldRefresh(state) ? "refresh_availability" : "build_candidate_shortlist";
 }
 
 export function routeAfterEnrich(

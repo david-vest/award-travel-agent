@@ -14,6 +14,7 @@ import { setSeatsAeroClientFactory } from "../src/agent/nodes/search";
 import { ReplaySeatsAeroClient } from "../src/tools/seats-aero/replay";
 import { buildGraphWithoutCheckpointer } from "../src/agent/graph";
 import { AgentState, type SearchPlan } from "../src/agent/state";
+import { RECOMMENDATION_PIPELINE_VERSION } from "../src/domain/recommendation-preferences";
 import { exactIntent } from "./evaluators/exact-intent";
 import { planSimilarity } from "./evaluators/plan-similarity";
 import { hallucinationCheck } from "./evaluators/hallucination";
@@ -143,7 +144,7 @@ function experimentMetadata(): Record<string, unknown> {
   return {
     mode: "replay", // Evals never touch the live API; replay keeps them reproducible.
     environment: process.env.NODE_ENV ?? "development",
-    rankingVersion: "deterministic-v1",
+    rankingVersion: RECOMMENDATION_PIPELINE_VERSION,
     ...(gitSha ? { gitSha } : {}),
   };
 }

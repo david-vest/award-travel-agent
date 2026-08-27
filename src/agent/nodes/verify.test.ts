@@ -87,6 +87,19 @@ describe("extractCitedIds", () => {
 });
 
 describe("findViolations", () => {
+  it("does not accept facts from raw options that never entered the assessed shortlist", () => {
+    const st = state({
+      awardResults: [
+        ...state().awardResults,
+        { availabilityId: "raw", origin: "ORD", destination: "NRT", date: "2026-09-14", program: "united", cabin: "business", miles: 99_999, direct: true, airlines: "UA" },
+      ],
+      candidateShortlist: state().awardResults,
+    });
+
+    const violations = findViolations("The recommended option costs 99,999 miles.", st);
+    expect(violations.some((violation) => violation.kind === "unsupported_number")).toBe(true);
+  });
+
   it("passes a draft whose numbers all come from results", () => {
     const draft = "Aeroplan has business for 87,500 miles on NH12. [ana-777]";
     expect(findViolations(draft, state())).toEqual([]);
@@ -184,7 +197,7 @@ describe("findViolations", () => {
     // "Flight details" block) is a legitimate, independently quotable
     // number even if it isn't (or isn't only) reflected in awardResults.
     const st = state({
-      awardResults: [],
+      candidateShortlist: state().awardResults,
       tripSummaries: [
         {
           availabilityId: "a1",

@@ -10,7 +10,10 @@ import type { AgentStateType } from "../state";
 export async function degrade(
   state: AgentStateType,
 ): Promise<Partial<AgentStateType>> {
-  const options = (state.awardResults ?? []).slice(0, 5);
+  const assessableOptions = state.candidateShortlist === undefined
+    ? state.awardResults ?? []
+    : state.candidateShortlist;
+  const options = assessableOptions.slice(0, 5);
   const docs = state.kbDocs ?? [];
 
   // The knowledge branch (triage -> retrieve_knowledge -> synthesize) never

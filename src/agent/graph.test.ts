@@ -20,6 +20,8 @@ vi.mock("./nodes/plan-discovery", () => ({ planDiscovery: vi.fn() }));
 vi.mock("./nodes/prepare-ui-search", () => ({ prepareUiSearch: vi.fn() }));
 vi.mock("./nodes/resolve-ui-locations", () => ({ resolveUiLocations: vi.fn() }));
 vi.mock("./nodes/search", () => ({ searchAwards: vi.fn(), searchPositioningOptions: vi.fn(), needsPositioningSearch: vi.fn() }));
+vi.mock("./nodes/interpret-preferences", () => ({ interpretPreferences: vi.fn() }));
+vi.mock("./nodes/build-candidate-shortlist", () => ({ buildCandidateShortlist: vi.fn() }));
 vi.mock("./nodes/enrich", () => ({ enrichTrips: vi.fn() }));
 vi.mock("./nodes/retrieve", () => ({ retrieveKnowledgeNode: vi.fn() }));
 vi.mock("./nodes/rank-recommendations", () => ({ rankRecommendations: vi.fn() }));
@@ -33,6 +35,8 @@ import { planDiscovery } from "./nodes/plan-discovery";
 import { prepareUiSearch } from "./nodes/prepare-ui-search";
 import { resolveUiLocations } from "./nodes/resolve-ui-locations";
 import { searchAwards, searchPositioningOptions, needsPositioningSearch } from "./nodes/search";
+import { interpretPreferences } from "./nodes/interpret-preferences";
+import { buildCandidateShortlist } from "./nodes/build-candidate-shortlist";
 import { enrichTrips } from "./nodes/enrich";
 import { retrieveKnowledgeNode } from "./nodes/retrieve";
 import { rankRecommendations } from "./nodes/rank-recommendations";
@@ -57,6 +61,8 @@ describe("graph", () => {
       "resolve_ui_locations",
       "search_awards",
       "search_positioning",
+      "interpret_preferences",
+      "build_candidate_shortlist",
       "enrich_trips",
       "retrieve_knowledge",
       "rank_recommendations",
@@ -132,6 +138,8 @@ describe("graph traversal", () => {
     vi.mocked(searchAwards).mockImplementation(rec("search_awards", { awardResults: [] }));
     vi.mocked(searchPositioningOptions).mockImplementation(rec("search_positioning", { awardResults: [], positioningSearchComplete: true }));
     vi.mocked(needsPositioningSearch).mockReturnValue(false);
+    vi.mocked(interpretPreferences).mockImplementation(rec("interpret_preferences"));
+    vi.mocked(buildCandidateShortlist).mockImplementation(rec("build_candidate_shortlist", { candidateShortlist: [] }));
     vi.mocked(enrichTrips).mockImplementation(
       rec("enrich_trips", { tripSummaries: [] }),
     );
@@ -153,6 +161,8 @@ describe("graph traversal", () => {
     vi.mocked(triage).mockImplementation(rec("triage", { intent: "route_search" }));
     await invokeGraph("ORD to NRT business class");
     expect(visited).toContain("plan_search");
+    expect(visited).toContain("interpret_preferences");
+    expect(visited).toContain("build_candidate_shortlist");
     expect(visited).not.toContain("plan_discovery");
   });
 
@@ -196,6 +206,8 @@ describe("graph traversal", () => {
     });
     expect(visited).toContain("prepare_ui_search");
     expect(visited).toContain("resolve_ui_locations");
+    expect(visited).toContain("interpret_preferences");
+    expect(visited).toContain("build_candidate_shortlist");
     expect(visited).not.toContain("triage");
     expect(visited).not.toContain("plan_search");
   });
@@ -204,6 +216,7 @@ describe("graph traversal", () => {
     vi.mocked(needsPositioningSearch).mockReturnValueOnce(true).mockReturnValue(false);
     await invokeGraph("ORD to FUK business class");
     expect(visited.filter((node) => node === "search_positioning")).toHaveLength(1);
+    expect(visited.filter((node) => node === "build_candidate_shortlist")).toHaveLength(2);
     expect(visited.filter((node) => node === "enrich_trips")).toHaveLength(2);
   });
 
@@ -211,6 +224,8 @@ describe("graph traversal", () => {
     vi.mocked(triage).mockImplementation(rec("triage", { intent: "discovery" }));
     await invokeGraph("where can I go in business class for 100k miles?");
     expect(visited).toContain("plan_discovery");
+    expect(visited).toContain("interpret_preferences");
+    expect(visited).toContain("build_candidate_shortlist");
     expect(visited).not.toContain("plan_search");
   });
 

@@ -62,7 +62,9 @@ describe("POST /api/agent/runs", () => {
   it("emits recommendations and searchRan: true for a structured trip request search", async () => {
     mockGraphStream.mockImplementation(async function* () {
       yield { resolve_ui_locations: {} };
+      yield { interpret_preferences: { recommendationPreferences: { experienceWeight: 75, priorities: ["cabin_product", "schedule"], rationale: "Journey first." } } };
       yield { search_awards: { awardResults: [{ availabilityId: "avail-1", cabin: "business", miles: 60000 }] } };
+      yield { build_candidate_shortlist: { candidateShortlist: [{ availabilityId: "avail-1" }] } };
       yield { retrieve_knowledge: { kbDocs: [] } };
       yield { rank_recommendations: { recommendations: [sampleFlight] } };
       yield { synthesize: { draft: "Here are the best flight options." } };
@@ -98,6 +100,12 @@ describe("POST /api/agent/runs", () => {
     expect(resultsEvent).toBeDefined();
     expect(resultsEvent?.recommendations).toHaveLength(1);
 
+    const stageDetails = events
+      .filter((event): event is Extract<AgentEvent, { type: "stage" }> => event.type === "stage")
+      .map((event) => event.detail ?? "");
+    expect(stageDetails.some((detail) => detail.includes("75/100 toward journey experience"))).toBe(true);
+    expect(stageDetails.some((detail) => detail.includes("coverage-balanced candidate"))).toBe(true);
+
     const completeEvent = events.find((e): e is Extract<AgentEvent, { type: "complete" }> => e.type === "complete");
     expect(completeEvent).toBeDefined();
     expect(completeEvent?.recommendations).toHaveLength(1);
@@ -106,7 +114,9 @@ describe("POST /api/agent/runs", () => {
     const config = mockGraphStream.mock.calls[0]?.[1] as { metadata?: Record<string, unknown> };
     expect(config.metadata).toMatchObject({
       ui_version: "roam-search-v2",
-      ranking_version: "deterministic-v1",
+      ranking_version: "deterministic-shortlist-v2",
+      preference_interpreter_version: "bounded-v1",
+      candidate_shortlist_version: "coverage-v1",
       ranking_experience_weight: 75,
       ranking_priorities: ["cabin_product", "schedule"],
     });

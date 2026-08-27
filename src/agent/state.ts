@@ -3,6 +3,10 @@ import type { BaseMessage } from "@langchain/core/messages";
 import type { AwardOption, TripSummary } from "../tools";
 import type { RetrievedDoc } from "../rag/retriever";
 import type { FlightRecommendation, TripRequest } from "../contracts/travel-search";
+import {
+  defaultRecommendationPreferences,
+  type RecommendationPreferences,
+} from "../domain/recommendation-preferences";
 
 export type Intent = "route_search" | "discovery" | "knowledge" | "rejected";
 export type SearchStatus = "not_run" | "searched" | "provider_error";
@@ -163,10 +167,15 @@ export const AgentState = Annotation.Root({
   searchAttempts: Annotation<SearchAttempt[]>(replace<SearchAttempt[]>(() => [])),
   positioningSearchComplete: Annotation<boolean>(replace<boolean>(() => false)),
   awardResults: Annotation<AwardOption[]>(replace<AwardOption[]>(() => [])),
+  /** Eligible, coverage-preserving subset that is allowed to consume detail lookups. */
+  candidateShortlist: Annotation<AwardOption[]>(replace<AwardOption[]>(() => [])),
   searchStatus: Annotation<SearchStatus>(replace<SearchStatus>(() => "not_run")),
   tripSummaries: Annotation<TripSummary[]>(replace<TripSummary[]>(() => [])),
   recommendations: Annotation<FlightRecommendation[]>(replace<FlightRecommendation[]>(() => [])),
   kbDocs: Annotation<RetrievedDoc[]>(replace<RetrievedDoc[]>(() => [])),
+  recommendationPreferences: Annotation<RecommendationPreferences>(
+    replace<RecommendationPreferences>(defaultRecommendationPreferences),
+  ),
 
   draft: Annotation<string | null>(replace<string | null>(() => null)),
   violations: Annotation<Violation[]>(replace<Violation[]>(() => [])),

@@ -108,11 +108,13 @@ flowchart TD
   
   PlanSearch["plan_search<br/><i>(Structured Extraction)</i>"]:::llmNode
   PlanDisc["plan_discovery<br/><i>(Candidate Probing)</i>"]:::llmNode
+  Preferences["interpret_preferences<br/><i>(Bounded Soft-Preference Parsing)</i>"]:::llmNode
   
   Search["search_awards<br/><i>(Seats.aero API / Replay)</i>"]:::toolNode
   Refresh["refresh_availability<br/><i>(Deterministic Quota Gate)</i>"]:::toolNode
   Enrich["enrich_trips<br/><i>(Deterministic get_trip_details Tool)</i>"]:::toolNode
   Position["search_positioning<br/><i>(Broadened Gateway Ladder)</i>"]:::toolNode
+  Shortlist["build_candidate_shortlist<br/><i>(Deterministic Coverage Selector)</i>"]:::detNode
   
   RAG["retrieve_knowledge<br/><i>(Atlas Vector Search)</i>"]:::ragNode
   Rank["rank_recommendations<br/><i>(Deterministic Cost/Stop Ranker)</i>"]:::detNode
@@ -136,17 +138,19 @@ flowchart TD
   Triage -.->|"intent == 'knowledge'"| RAG
   
   ResolveUI --> PrepareUI
-  PrepareUI --> Search
-  PlanSearch --> Search
-  PlanDisc --> Search
+  PrepareUI --> Preferences
+  PlanSearch --> Preferences
+  PlanDisc --> Preferences
+  Preferences --> Search
   
   Search -.->|"requires_refresh"| Refresh
-  Search -.->|"skip_refresh"| Enrich
-  Refresh --> Enrich
+  Search -.->|"skip_refresh"| Shortlist
+  Refresh --> Shortlist
+  Shortlist --> Enrich
   
   Enrich -.->|"exact_weak"| Position
   Enrich -.->|"sufficient"| RAG
-  Position --> Enrich
+  Position --> Shortlist
   
   RAG --> Rank
   Rank --> Synthesize
@@ -180,7 +184,7 @@ flowchart TD
 | **Frontend Runtime** | **React 19.2.8** | State hooks, responsive CSS modules, dynamic comparison rail, SSE event listener | `app/page.tsx`, `app/useAgentRun.ts` |
 | **Styling & Typography** | **CSS Modules + Fontsource** | Bespoke dark/light themes, Manrope (sans) and Newsreader (editorial serif) | `app/page.module.css`, `app/globals.css` |
 | **Icons & Visuals** | **Phosphor Icons React** | Accessible, consistent iconography for cabins, airlines, transfers, and controls | `app/AirlineLogo.tsx`, `app/page.tsx` |
-| **Agent State Machine** | **@langchain/langgraph 1.4.9** | 15-node cyclic execution graph with conditional branching and checkpointing | `src/agent/graph.ts`, `src/agent/state.ts` |
+| **Agent State Machine** | **@langchain/langgraph 1.4.9** | 19-node cyclic execution graph with conditional branching and checkpointing | `src/agent/graph.ts`, `src/agent/state.ts` |
 | **LLM Orchestration** | **@langchain/anthropic 1.5.4** | Claude 3.5 Sonnet integration with ephemeral prompt caching (`cache_control`) | `src/agent/models.ts`, `src/agent/cache.ts` |
 | **Vector Search & DB** | **MongoDB Atlas & MongoDB Node SDK 6.21** | Vector search index for knowledge retrieval & conversation checkpointer (`MongoDBSaver`) | `src/rag/store.ts`, `src/rag/retriever.ts` |
 | **Vector Embeddings** | **Voyage AI (`voyage-3-lite`)** | High-dimensional dense embeddings for award rules, reviews, and transfer policies | `src/rag/store.ts`, `src/rag/ingest.ts` |
@@ -197,6 +201,8 @@ flowchart TD
 ### 1. The Deterministic Search vs. Conversational Dual-Path
 - **Structured Search Form**: Bypasses conversational parsing. User inputs (airports, dates, cabins, transfer programs) are directly mapped into `AgentState` via `resolve_ui_locations` and `prepare_ui_search`. An LLM is never asked to guess IATA codes or dates.
 - **Conversational Follow-up**: Handled via `triage` which routes either to structured extraction (`plan_search`), exploratory candidate generation under a strict budget (`plan_discovery`), or pure informational knowledge retrieval (`retrieve_knowledge`).
+- **Bounded Preference Interpretation**: `interpret_preferences` uses Haiku structured output only for soft language, merges it with explicit slider/chip inputs under code-owned bounds, and falls back to deterministic keywords. Hard search fields are absent from its schema.
+- **Coverage Before Costly Enrichment**: `build_candidate_shortlist` applies hard eligibility and round-robin coverage quotas before any trip-detail calls, preventing a mileage-ordered provider response from excluding promising nonstop, preferred-carrier, program, date, or positioning alternatives.
 
 ### 2. Post-Search Grounded RAG
 Rather than guessing knowledge queries before award space is found:
@@ -252,15 +258,17 @@ sequenceDiagram
   API->>Graph: Initialize graph with thread_id
   Graph->>Mongo: Load conversation history
   
-  Note over Graph: Node: guard_input -> resolve_ui_locations -> prepare_ui_search
+  Note over Graph: Node: guard_input -> resolve_ui_locations -> prepare_ui_search -> interpret_preferences
   API-->>UI: SSE: event "stage" (Resolving locations & planning search)
 
   Graph->>Tool: search_awards (Seats.aero cached availability)
   Tool-->>Graph: Return flight itineraries (NH, JL, UA)
   API-->>UI: SSE: event "stage" (Found live award seats)
 
+  Graph->>Graph: build_candidate_shortlist (Hard eligibility + diverse coverage)
+
   opt Enrich Itineraries
-    Graph->>Tool: enrich_trips invokes get_trip_details for capped candidates
+    Graph->>Tool: enrich_trips invokes get_trip_details for shortlisted candidates
     Tool-->>Graph: Return aircraft, schedule, stops, and segment data
   end
 

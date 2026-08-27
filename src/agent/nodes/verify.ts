@@ -140,8 +140,11 @@ export function findViolations(
 ): Violation[] {
   const violations: Violation[] = [];
 
-  const options = state.awardResults ?? [];
-  const trips = state.tripSummaries ?? [];
+  const options = state.candidateShortlist === undefined
+    ? state.awardResults ?? []
+    : state.candidateShortlist;
+  const assessableIds = new Set(options.map((option) => option.availabilityId));
+  const trips = (state.tripSummaries ?? []).filter((trip) => assessableIds.has(trip.availabilityId));
   const docs = state.kbDocs ?? [];
 
   // Mileage can be legitimately quoted from the availability search result,

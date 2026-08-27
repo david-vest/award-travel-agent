@@ -3,6 +3,20 @@ import type { AgentStateType } from "../state";
 import { rankRecommendations } from "./rank-recommendations";
 
 describe("rankRecommendations", () => {
+  it("creates recommendation cards only for shortlisted, fully assessed options", async () => {
+    const shortlisted = { availabilityId: "shortlisted", origin: "SFO", destination: "HND", date: "2026-09-18", program: "united", cabin: "business", miles: 60_000, direct: true, airlines: "UA" } as const;
+    const rawOnly = { availabilityId: "raw-only", origin: "SFO", destination: "HND", date: "2026-09-18", program: "united", cabin: "business", miles: 40_000, direct: true, airlines: "UA" } as const;
+    const result = await rankRecommendations({
+      searchPlan: { origins: ["SFO"], destinations: ["HND"], cabins: ["business"], nonstopOnly: false, programs: [] },
+      awardResults: [rawOnly, shortlisted],
+      candidateShortlist: [shortlisted],
+      tripSummaries: [],
+    } as unknown as AgentStateType);
+
+    expect(result.recommendations?.map((item) => item.id)).toEqual(["shortlisted:business"]);
+    expect(result.awardResults).toHaveLength(2);
+  });
+
   it("puts a viable nonstop preferred-carrier option first and omits connections for nonstop searches", async () => {
     const result = await rankRecommendations({
       searchPlan: { origins: ["SFO"], destinations: ["HND"], cabins: ["business"], nonstopOnly: true, stopPreference: "nonstop", programs: ["united"], travelers: 2, preferredAirlines: ["NH"] },

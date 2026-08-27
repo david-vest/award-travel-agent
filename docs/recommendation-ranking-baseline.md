@@ -9,6 +9,12 @@ assessment. Production traces and LangSmith eval runs carry
 `ranking_version: deterministic-v1` so later hybrid experiments can be
 compared against the correct baseline.
 
+Phase 2/3 runs use `ranking_version: deterministic-shortlist-v2`, plus
+`preference_interpreter_version: bounded-v1` and
+`candidate_shortlist_version: coverage-v1`. The underlying final score is
+still deterministic-v1, but the assessed candidate pool is now explicitly
+versioned because coverage selection can change which options reach it.
+
 The local baseline is covered by fixture/unit tests and does not require live
 award inventory:
 
@@ -31,7 +37,8 @@ journey evidence justifies it, but it must preserve the following invariants:
 - exact-route and positioning options remain visibly distinguishable;
 - model failure falls back to this deterministic ordering.
 
-Run `npm test` to reproduce the local baseline. A remote LangSmith baseline can
-be recorded with `npm run eval` when LangSmith, model, and embedding credentials
-are configured; its metadata will include `rankingVersion: deterministic-v1`.
-
+Run `npm test` to reproduce the local deterministic-score invariants. The
+current `npm run eval` command identifies Phase 2/3 runs as
+`deterministic-shortlist-v2`; a historical remote `deterministic-v1` experiment
+must be run from the Phase 0 revision so the candidate-pool behavior is not
+silently mixed with the baseline.

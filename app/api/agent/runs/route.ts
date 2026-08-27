@@ -4,7 +4,12 @@ import { agentRunRequestSchema, type AgentEvent, type AgentStage, type FlightRec
 import { describeTripRequest } from "../../../../src/agent/nodes/prepare-ui-search";
 import { getAgentGraph } from "../../../../src/agent/runtime";
 import { checkRateLimit } from "../../../../src/api/rate-limit";
-import { defaultRankingPreference } from "../../../../src/domain/recommendation-preferences";
+import {
+  CANDIDATE_SHORTLIST_VERSION,
+  PREFERENCE_INTERPRETER_VERSION,
+  RECOMMENDATION_PIPELINE_VERSION,
+  defaultRankingPreference,
+} from "../../../../src/domain/recommendation-preferences";
 
 export const runtime = "nodejs";
 
@@ -103,7 +108,9 @@ export async function POST(request: Request) {
           metadata: {
             ui_version: "roam-search-v2",
             request_type: body.request ? "structured_search" : "follow_up",
-            ranking_version: "deterministic-v1",
+            ranking_version: RECOMMENDATION_PIPELINE_VERSION,
+            preference_interpreter_version: PREFERENCE_INTERPRETER_VERSION,
+            candidate_shortlist_version: CANDIDATE_SHORTLIST_VERSION,
             credit_programs: body.request?.creditCardPrograms ?? [],
             award_programs: body.request?.awardPrograms ?? [],
             ...(rankingPreference ? {
@@ -143,6 +150,11 @@ export async function POST(request: Request) {
             if (node === "resolve_ui_locations") {
               activateStage("search", "Resolved the requested places to searchable commercial airports.");
             }
+            if (node === "interpret_preferences") {
+              const preference = data.recommendationPreferences as { experienceWeight?: number; priorities?: string[]; rationale?: string } | undefined;
+              const priorityCount = preference?.priorities?.length ?? 0;
+              activateStage("search", `Interpreted the ranking brief at ${preference?.experienceWeight ?? 50}/100 toward journey experience${priorityCount ? ` with ${priorityCount} stated priorit${priorityCount === 1 ? "y" : "ies"}` : ""}.`);
+            }
             if (node === "search_awards") {
               searchExecuted = true;
               const optionCount = Array.isArray(data.awardResults) ? data.awardResults.length : 0;
@@ -154,6 +166,10 @@ export async function POST(request: Request) {
               const attempts = Array.isArray(data.searchAttempts) ? data.searchAttempts.length : 0;
               const optionCount = Array.isArray(data.awardResults) ? data.awardResults.length : 0;
               activateStage("rules", `Expanded to ${attempts || "additional"} route scope${attempts === 1 ? "" : "s"}; validating ${optionCount.toLocaleString()} candidate options.`);
+            }
+            if (node === "build_candidate_shortlist") {
+              const candidateCount = Array.isArray(data.candidateShortlist) ? data.candidateShortlist.length : 0;
+              activateStage("rules", `Selected ${candidateCount.toLocaleString()} eligible, coverage-balanced candidate${candidateCount === 1 ? "" : "s"} for detailed verification.`);
             }
             if (node === "enrich_trips") {
               const itineraryCount = Array.isArray(data.tripSummaries) ? data.tripSummaries.length : 0;

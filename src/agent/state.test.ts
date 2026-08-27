@@ -46,7 +46,16 @@ describe("AgentState", () => {
 
   it("defaults collections to empty arrays", () => {
     expect(asAggregate(AgentState.spec.kbDocs).initialValueFactory?.()).toEqual([]);
+    expect(asAggregate(AgentState.spec.candidateShortlist).initialValueFactory?.()).toEqual([]);
     expect(asAggregate(AgentState.spec.violations).initialValueFactory?.()).toEqual([]);
+  });
+
+  it("defaults recommendation preferences to the balanced deterministic profile", () => {
+    expect(asAggregate(AgentState.spec.recommendationPreferences).initialValueFactory?.()).toMatchObject({
+      experienceWeight: 50,
+      priorities: [],
+      source: "default",
+    });
   });
 });
 

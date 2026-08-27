@@ -8,6 +8,7 @@ vi.mock("../models", () => ({
 
 import { chat } from "../models";
 import { guardInput } from "./guard";
+import { defaultRecommendationPreferences } from "../../domain/recommendation-preferences";
 
 /** Wires `chat(...).withStructuredOutput(...).invoke(...)` to resolve/reject with `result`. */
 function mockGuardResponse(result: unknown) {
@@ -31,6 +32,7 @@ function stateWith(text: string): AgentStateType {
 /** The channels every new turn must start clean on. */
 const SEARCH_RESET_FIELDS = {
   awardResults: [],
+  candidateShortlist: [],
   searchStatus: "not_run",
   tripSummaries: [],
   recommendations: [],
@@ -42,6 +44,7 @@ const SEARCH_RESET_FIELDS = {
   violations: [],
   refreshedAt: null,
   degradedReasons: [],
+  recommendationPreferences: defaultRecommendationPreferences(),
 };
 
 /** Same, plus refusalReason default-reset — every path except an explicit rejection wants this. */
