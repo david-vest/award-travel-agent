@@ -2,7 +2,10 @@
 id: chase-ur-transfer-partners
 collection: transfers
 programs: [united, southwest, jetblue, britishairways, iberia, aeroplan, flyingblue, virginatlantic, singapore]
+creditPrograms: [chase]
+dimensions: [transfer_risk]
 updated: 2026-08-13
+reviewAfter: 2026-11-13
 sources: ["https://www.chase.com/personal/credit-cards/education/basics/how-to-transfer-chase-ultimate-rewards-points"]
 ---
 

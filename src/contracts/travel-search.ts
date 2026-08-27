@@ -80,6 +80,7 @@ export const agentRunRequestSchema = z.object({
 export type AgentRunRequest = z.infer<typeof agentRunRequestSchema>;
 
 export type RecommendationConfidence = "high" | "medium" | "low";
+export type RecommendationBadge = "best_overall" | "best_value" | "best_experience" | "best_schedule";
 
 export type FlightRecommendation = {
   id: string;
@@ -105,6 +106,19 @@ export type FlightRecommendation = {
   reason: string;
   scoreFactors: Array<{ label: string; value: string }>;
   confidence: RecommendationConfidence;
+  valueScore?: number;
+  experienceScore?: number;
+  overallScore?: number;
+  assessmentConfidence?: RecommendationConfidence;
+  evidenceIds?: string[];
+  badges?: RecommendationBadge[];
+  tradeoff?: {
+    comparedWithId: string;
+    extraMiles: number;
+    feeDifferenceUsd?: number;
+    durationSavedMinutes?: number;
+    stopsSaved?: number;
+  };
   positioning?: {
     tier: "destination_gateway" | "country_pair" | "region_pair";
     before?: string;

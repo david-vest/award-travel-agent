@@ -1,4 +1,4 @@
-import { retrieveKnowledge } from "../../rag/retriever";
+import { retrieveEvidenceForOptions, retrieveKnowledge } from "../../rag/retriever";
 import type { AgentStateType } from "../state";
 import { lastUserText } from "./triage";
 
@@ -15,18 +15,40 @@ export async function retrieveKnowledgeNode(
   // excerpts become a distracting substitute for the task the user asked us
   // to perform. Pure knowledge questions still retrieve normally.
   if (state.intent !== "knowledge" && (state.awardResults?.length ?? 0) === 0) {
-    return { kbDocs: [] };
+    return { kbDocs: [], optionEvidence: {} };
   }
 
+  const assessableOptions = state.candidateShortlist === undefined
+    ? state.awardResults ?? []
+    : state.candidateShortlist;
+  let docs = [] as Awaited<ReturnType<typeof retrieveKnowledge>>;
+  let optionEvidence = {} as Awaited<ReturnType<typeof retrieveEvidenceForOptions>>;
+  const degradedReasons = [...(state.degradedReasons ?? [])];
   try {
-    const docs = await retrieveKnowledge(
+    docs = await retrieveKnowledge(
       lastUserText(state),
-      state.awardResults ?? [],
+      assessableOptions,
       state.tripSummaries ?? [],
     );
-    return { kbDocs: docs };
   } catch {
-    // A vector-store outage degrades the answer; it should not end the turn.
-    return { kbDocs: [], degradedReasons: [...(state.degradedReasons ?? []), "rag_retrieval_failed"] };
+    degradedReasons.push("rag_retrieval_failed");
   }
+  if (state.intent !== "knowledge" && assessableOptions.length > 0) {
+    try {
+      optionEvidence = await retrieveEvidenceForOptions(
+        lastUserText(state),
+        assessableOptions,
+        state.tripSummaries ?? [],
+        new Date(),
+        state.tripRequest?.creditCardPrograms ?? [],
+      );
+    } catch {
+      degradedReasons.push("option_evidence_retrieval_failed");
+    }
+  }
+  return {
+    kbDocs: docs,
+    optionEvidence,
+    ...(degradedReasons.length !== (state.degradedReasons ?? []).length ? { degradedReasons } : {}),
+  };
 }

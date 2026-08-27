@@ -71,7 +71,8 @@ flowchart TD
   Enrich -->|"exact option is weak"| Position["search_positioning"]
   Position --> Shortlist
   Enrich --> RAG["retrieve_knowledge"]
-  RAG --> Rank["rank_recommendations"]
+  RAG --> Assess["assess_candidate_experience"]
+  Assess --> Rank["rank_recommendations"]
   Rank --> Synthesize["synthesize + verify"]
   Synthesize --> SSE["typed SSE events"]
   SSE --> UI
@@ -83,7 +84,7 @@ A follow-up chat message instead goes through the conversational planner: `triag
 
 Soft ranking language is interpreted by a low-cost structured-output model, then merged into the slider/chip seed under code-owned bounds. A keyword fallback produces the same typed profile during a model outage, and neither path can modify search constraints. Before enrichment, a deterministic coverage selector applies hard eligibility and preserves candidates across value, nonstop/stops, preferred carrier, program, date, route tier, fees, and known carrier/aircraft dimensions. This prevents provider cost ordering from spending all detail calls on similar cheap options.
 
-The current ranking node remains deterministic and inspectable. It accounts for points cost, stop preference, the actual number of stops, known total layover time, preferred airlines, and known seats relative to traveler count. Only shortlisted options become recommendation cards; the larger raw set remains in graph state for audit. Facts on cards come from provider output or enrichment, while the narrative is grounded against graph state.
+Option-specific retrieval first joins sourced documents by carrier + normalized aircraft + cabin, award program, or actual connection airport/route. One bounded structured-output model call scores only qualitative dimensions supported by that option's evidence; it never receives mileage, fees, flight numbers, or schedules. Code calculates objective schedule and connection scores, robust normalized value, the slider-weighted overall score, stable tie-breakers, category badges, and tradeoffs against the cheapest eligible option. Model or retrieval failure falls back to objective dimensions with reduced confidence.
 
 Because Seats.aero indexes route pairs rather than arbitrary connecting itineraries, Roam uses a bounded positioning ladder when the exact route has no strong option. For example, ORD→FUK broadens to ORD→TYO/JPN, then USA→JPN, and finally USA→ASA. The quality gate considers points, fees, duration, stops, and known seat count. A run can spend at most four Seats.aero route-search calls, and every broadened result is labeled with the separate positioning segment(s) it requires.
 

@@ -1,8 +1,10 @@
 export const RANKING_EXPERIENCE_WEIGHTS = [0, 25, 50, 75, 100] as const;
 
-export const RECOMMENDATION_PIPELINE_VERSION = "deterministic-shortlist-v2";
+export const RECOMMENDATION_PIPELINE_VERSION = "evidence-hybrid-v3";
 export const PREFERENCE_INTERPRETER_VERSION = "bounded-v1";
 export const CANDIDATE_SHORTLIST_VERSION = "coverage-v1";
+export const EVIDENCE_RETRIEVAL_VERSION = "option-linked-v1";
+export const EXPERIENCE_ASSESSMENT_VERSION = "evidence-bounded-v1";
 
 export const RANKING_LEVELS = [
   { value: 0, label: "Lowest points & fees" },

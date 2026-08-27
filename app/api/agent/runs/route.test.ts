@@ -114,8 +114,10 @@ describe("POST /api/agent/runs", () => {
     const config = mockGraphStream.mock.calls[0]?.[1] as { metadata?: Record<string, unknown> };
     expect(config.metadata).toMatchObject({
       ui_version: "roam-search-v2",
-      ranking_version: "deterministic-shortlist-v2",
+      ranking_version: "evidence-hybrid-v3",
       preference_interpreter_version: "bounded-v1",
+      evidence_retrieval_version: "option-linked-v1",
+      experience_assessment_version: "evidence-bounded-v1",
       candidate_shortlist_version: "coverage-v1",
       ranking_experience_weight: 75,
       ranking_priorities: ["cabin_product", "schedule"],

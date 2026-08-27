@@ -1,8 +1,29 @@
 import { describe, expect, it } from "vitest";
 import type { AgentStateType } from "../state";
-import { rankRecommendations } from "./rank-recommendations";
+import { normalizedValueScores, rankRecommendations } from "./rank-recommendations";
+import { seedRecommendationPreferences } from "../../domain/recommendation-preferences";
 
 describe("rankRecommendations", () => {
+  it("clips cost outliers so ordinary options retain meaningful value separation", () => {
+    expect(normalizedValueScores([50_000, 60_000, 70_000, 80_000, 1_000_000])).toEqual([100, 80, 60, 40, 0]);
+  });
+
+  it("moves from the cheapest option to the better journey at the slider extremes", async () => {
+    const options = [
+      { availabilityId: "cheap", origin: "SFO", destination: "HND", date: "2026-09-18", program: "united", cabin: "business", miles: 50_000, direct: false, airlines: "UA" },
+      { availabilityId: "journey", origin: "SFO", destination: "HND", date: "2026-09-18", program: "united", cabin: "business", miles: 70_000, direct: true, airlines: "NH" },
+    ];
+    const trips = [
+      { availabilityId: "cheap", tripId: "t1", flightNumbers: [], aircraft: [], carriers: ["UA"], stops: 1, durationMinutes: 1_100, connections: [{ airport: "LAX", layoverMinutes: 300 }] },
+      { availabilityId: "journey", tripId: "t2", flightNumbers: [], aircraft: [], carriers: ["NH"], stops: 0, durationMinutes: 650 },
+    ];
+    const base = { searchPlan: { origins: ["SFO"], destinations: ["HND"], cabins: ["business"], nonstopOnly: false, programs: [] }, awardResults: options, tripSummaries: trips };
+    const value = await rankRecommendations({ ...base, recommendationPreferences: seedRecommendationPreferences({ experienceWeight: 0, priorities: [] }) } as unknown as AgentStateType);
+    const journey = await rankRecommendations({ ...base, recommendationPreferences: seedRecommendationPreferences({ experienceWeight: 100, priorities: ["schedule", "few_connections"] }) } as unknown as AgentStateType);
+    expect(value.recommendations?.[0].id).toBe("cheap:business");
+    expect(journey.recommendations?.[0]).toMatchObject({ id: "journey:business", badges: expect.arrayContaining(["best_overall", "best_experience"]) });
+    expect(journey.recommendations?.[0].tradeoff).toMatchObject({ comparedWithId: "cheap:business", extraMiles: 20_000, stopsSaved: 1, durationSavedMinutes: 450 });
+  });
   it("creates recommendation cards only for shortlisted, fully assessed options", async () => {
     const shortlisted = { availabilityId: "shortlisted", origin: "SFO", destination: "HND", date: "2026-09-18", program: "united", cabin: "business", miles: 60_000, direct: true, airlines: "UA" } as const;
     const rawOnly = { availabilityId: "raw-only", origin: "SFO", destination: "HND", date: "2026-09-18", program: "united", cabin: "business", miles: 40_000, direct: true, airlines: "UA" } as const;

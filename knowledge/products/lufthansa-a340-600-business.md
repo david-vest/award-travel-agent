@@ -5,7 +5,10 @@ airlines: [LH]
 aircraft: ["A340-600", "Airbus A340-600"]
 cabin: business
 programs: [aeroplan, united, lifemiles]
+dimensions: [cabin_product]
+productName: "Lufthansa A340 Business"
 updated: 2026-06-01
+reviewAfter: 2027-02-13
 sources: ["https://www.lufthansa.com/us/en/business-class"]
 ---
 

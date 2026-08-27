@@ -6,7 +6,10 @@ aircraft: ["A350-900", "Airbus A350-900"]
 cabin: business
 programs: [flyingblue]
 regions: [Europe]
+dimensions: [cabin_product]
+productName: "Air France A350 Business"
 updated: 2026-06-01
+reviewAfter: 2027-02-13
 sources: ["https://wwws.airfrance.us/en/information/preparation/business-class"]
 ---
 

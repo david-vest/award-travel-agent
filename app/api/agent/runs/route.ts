@@ -6,6 +6,8 @@ import { getAgentGraph } from "../../../../src/agent/runtime";
 import { checkRateLimit } from "../../../../src/api/rate-limit";
 import {
   CANDIDATE_SHORTLIST_VERSION,
+  EVIDENCE_RETRIEVAL_VERSION,
+  EXPERIENCE_ASSESSMENT_VERSION,
   PREFERENCE_INTERPRETER_VERSION,
   RECOMMENDATION_PIPELINE_VERSION,
   defaultRankingPreference,
@@ -111,6 +113,8 @@ export async function POST(request: Request) {
             ranking_version: RECOMMENDATION_PIPELINE_VERSION,
             preference_interpreter_version: PREFERENCE_INTERPRETER_VERSION,
             candidate_shortlist_version: CANDIDATE_SHORTLIST_VERSION,
+            evidence_retrieval_version: EVIDENCE_RETRIEVAL_VERSION,
+            experience_assessment_version: EXPERIENCE_ASSESSMENT_VERSION,
             credit_programs: body.request?.creditCardPrograms ?? [],
             award_programs: body.request?.awardPrograms ?? [],
             ...(rankingPreference ? {
@@ -179,10 +183,16 @@ export async function POST(request: Request) {
               if (stageStatus.get("search") !== "complete") {
                 completeStage("search", "No new availability search was required for this follow-up.");
               }
-              const documentCount = Array.isArray(data.kbDocs) ? data.kbDocs.length : 0;
-              completeStage("rules", `Cross-checked ${documentCount.toLocaleString()} relevant program and booking note${documentCount === 1 ? "" : "s"}.`);
+              const evidence = data.optionEvidence && typeof data.optionEvidence === "object"
+                ? Object.values(data.optionEvidence as Record<string, unknown[]>).flat().length : 0;
+              activateStage("rules", `Linked ${evidence.toLocaleString()} sourced evidence excerpt${evidence === 1 ? "" : "s"} to the exact options they can assess.`);
+            }
+            if (node === "assess_candidate_experience") {
+              const assessmentCount = data.candidateAssessments && typeof data.candidateAssessments === "object"
+                ? Object.keys(data.candidateAssessments as Record<string, unknown>).length : 0;
+              completeStage("rules", `Assessed ${assessmentCount.toLocaleString()} candidate${assessmentCount === 1 ? "" : "s"} with bounded qualitative evidence and deterministic flight facts.`);
               if (searchExecuted) {
-                activateStage("rank", "Applying the deterministic value model to the verified options.");
+                activateStage("rank", "Blending normalized value and journey experience with the selected preference.");
               } else {
                 completeStage("rank", "Kept verified flight recommendations.");
               }
@@ -191,8 +201,8 @@ export async function POST(request: Request) {
               recommendations = data.recommendations as FlightRecommendation[];
               send({ type: "results", recommendations });
               if (node === "rank_recommendations") {
-                if (stageStatus.get("rank") !== "active") activateStage("rank", "Applying the deterministic value model to the verified options.");
-                completeStage("rank", `Ranked ${recommendations.length.toLocaleString()} option${recommendations.length === 1 ? "" : "s"} by points, fees, stops, and fit.`);
+                if (stageStatus.get("rank") !== "active") activateStage("rank", "Blending normalized value and journey experience with the selected preference.");
+                completeStage("rank", `Ranked ${recommendations.length.toLocaleString()} option${recommendations.length === 1 ? "" : "s"} by value, experience, hard fit, and stable tie-breakers.`);
               }
             }
             if (typeof data.draft === "string") {

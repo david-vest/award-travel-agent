@@ -24,6 +24,7 @@ vi.mock("./nodes/interpret-preferences", () => ({ interpretPreferences: vi.fn() 
 vi.mock("./nodes/build-candidate-shortlist", () => ({ buildCandidateShortlist: vi.fn() }));
 vi.mock("./nodes/enrich", () => ({ enrichTrips: vi.fn() }));
 vi.mock("./nodes/retrieve", () => ({ retrieveKnowledgeNode: vi.fn() }));
+vi.mock("./nodes/assess-candidate-experience", () => ({ assessCandidateExperience: vi.fn() }));
 vi.mock("./nodes/rank-recommendations", () => ({ rankRecommendations: vi.fn() }));
 vi.mock("./nodes/synthesize", () => ({ synthesize: vi.fn() }));
 
@@ -39,6 +40,7 @@ import { interpretPreferences } from "./nodes/interpret-preferences";
 import { buildCandidateShortlist } from "./nodes/build-candidate-shortlist";
 import { enrichTrips } from "./nodes/enrich";
 import { retrieveKnowledgeNode } from "./nodes/retrieve";
+import { assessCandidateExperience } from "./nodes/assess-candidate-experience";
 import { rankRecommendations } from "./nodes/rank-recommendations";
 import { synthesize } from "./nodes/synthesize";
 import * as degradeModule from "./nodes/degrade";
@@ -65,6 +67,7 @@ describe("graph", () => {
       "build_candidate_shortlist",
       "enrich_trips",
       "retrieve_knowledge",
+      "assess_candidate_experience",
       "rank_recommendations",
       "synthesize",
     ]) {
@@ -145,6 +148,9 @@ describe("graph traversal", () => {
     );
     vi.mocked(retrieveKnowledgeNode).mockImplementation(
       rec("retrieve_knowledge", { kbDocs: [] }),
+    );
+    vi.mocked(assessCandidateExperience).mockImplementation(
+      rec("assess_candidate_experience", { candidateAssessments: {} }),
     );
     vi.mocked(rankRecommendations).mockImplementation(
       rec("rank_recommendations", { recommendations: [] }),

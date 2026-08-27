@@ -83,6 +83,8 @@ export async function prepareUiSearch(
     tripSummaries: [],
     recommendations: [],
     kbDocs: [],
+    optionEvidence: {},
+    candidateAssessments: {},
     draft: null,
     violations: [],
     refreshedAt: null,

@@ -6,7 +6,10 @@ aircraft: ["787-9", "Boeing 787-9"]
 cabin: business
 programs: [turkish]
 regions: [Middle East, Africa, Asia]
+dimensions: [cabin_product]
+productName: "Turkish Airlines 787 Business"
 updated: 2026-06-01
+reviewAfter: 2027-02-13
 sources: ["https://www.turkishairlines.com/en-int/flights/travel-info/onboard/cabin-features/business-class/"]
 ---
 

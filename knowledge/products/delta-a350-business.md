@@ -5,7 +5,10 @@ airlines: [DL]
 aircraft: ["A350-900", "Airbus A350-900"]
 cabin: business
 programs: [delta, virginatlantic, flyingblue]
+dimensions: [cabin_product]
+productName: "Delta One Suite"
 updated: 2026-08-17
+reviewAfter: 2027-02-13
 sources: ["https://www.delta.com/us/en/onboard/onboard-experience/delta-one-business-class", "https://thepointsguy.com/reviews/delta-a350-delta-one-suites/"]
 ---
 

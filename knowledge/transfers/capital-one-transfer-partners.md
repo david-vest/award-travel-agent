@@ -2,7 +2,10 @@
 id: capital-one-transfer-partners
 collection: transfers
 programs: [aeroplan, flyingblue, lifemiles, britishairways, cathaypacific, emirates, etihad, evaair, finnair, qantas, singapore, turkish, virginatlantic, jetblue]
+creditPrograms: [capitalone]
+dimensions: [transfer_risk]
 updated: 2026-08-13
+reviewAfter: 2026-11-13
 sources: ["https://www.capitalone.com/learn-grow/money-management/venture-miles-transfer-partnerships/"]
 ---
 

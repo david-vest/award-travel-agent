@@ -52,6 +52,8 @@ const RESET_TURN_STATE: Partial<AgentStateType> = {
   searchAttempts: [],
   positioningSearchComplete: false,
   kbDocs: [],
+  optionEvidence: {},
+  candidateAssessments: {},
   draft: null,
   violations: [],
   refusalReason: null,

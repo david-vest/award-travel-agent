@@ -6,7 +6,10 @@ aircraft: ["A350-900", "Airbus A350-900"]
 cabin: business
 programs: [singapore, united, aeroplan]
 regions: [Asia]
+dimensions: [cabin_product]
+productName: "Singapore Airlines A350 Business"
 updated: 2026-06-01
+reviewAfter: 2027-02-13
 sources: ["https://www.singaporeair.com/en_UK/us/flying-withus/cabins/business-class/"]
 ---
 

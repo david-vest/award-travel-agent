@@ -15,6 +15,12 @@ Phase 2/3 runs use `ranking_version: deterministic-shortlist-v2`, plus
 still deterministic-v1, but the assessed candidate pool is now explicitly
 versioned because coverage selection can change which options reach it.
 
+Phase 4/5 runs use `ranking_version: evidence-hybrid-v3`,
+`evidence_retrieval_version: option-linked-v1`, and
+`experience_assessment_version: evidence-bounded-v1`. This baseline remains
+the historical comparison point; the hybrid pipeline is covered by slider
+extreme, evidence isolation, validation, and deterministic fallback tests.
+
 The local baseline is covered by fixture/unit tests and does not require live
 award inventory:
 

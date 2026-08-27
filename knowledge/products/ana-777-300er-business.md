@@ -5,7 +5,10 @@ airlines: [NH]
 aircraft: ["777-300ER", "Boeing 777-300ER"]
 cabin: business
 programs: [united, aeroplan, virginatlantic, lifemiles]
+dimensions: [cabin_product]
+productName: "ANA The Room"
 updated: 2026-08-13
+reviewAfter: 2027-02-13
 sources: ["https://www.ana.co.jp/en/us/travel-information/seat-map/"]
 ---
 

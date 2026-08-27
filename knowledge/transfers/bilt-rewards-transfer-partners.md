@@ -2,7 +2,10 @@
 id: bilt-rewards-transfer-partners
 collection: transfers
 programs: [united, alaska, aeroplan, flyingblue, turkish, lifemiles, cathaypacific, emirates, etihad, virginatlantic, britishairways, iberia, tap, southwest, japanairlines, qatar]
+creditPrograms: [bilt]
+dimensions: [transfer_risk]
 updated: 2026-08-13
+reviewAfter: 2026-11-13
 sources: ["https://support.biltrewards.com/hc/en-us/articles/19086448638989-Bilt-s-Transfer-Partners"]
 ---
 

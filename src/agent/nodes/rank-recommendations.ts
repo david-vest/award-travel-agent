@@ -1,11 +1,32 @@
-import type { FlightRecommendation } from "../../contracts/travel-search";
+import type {
+  FlightRecommendation,
+  RecommendationBadge,
+  RecommendationConfidence,
+} from "../../contracts/travel-search";
+import type { CandidateAssessment } from "../../domain/candidate-assessment";
 import { awardProgramForSource } from "../../domain/programs";
+import { defaultRecommendationPreferences } from "../../domain/recommendation-preferences";
 import type { AwardOption, TripSummary } from "../../tools";
+import { optionId } from "../../rag/retriever";
 import type { AgentStateType } from "../state";
 import { filterByPointBalances } from "./search";
 import { blendedCost } from "../points-value";
 
-/** Trip-detail taxes are the confirmed figure; the search result's own taxes are the best fallback before enrichment has run. */
+type Candidate = {
+  option: AwardOption;
+  trip?: TripSummary;
+  carriers: string[];
+  taxes?: { amount: number; currency: string };
+  cost: number;
+  valueScore: number;
+  scheduleScore: number;
+  experienceScore: number;
+  overallScore: number;
+  assessmentConfidence: RecommendationConfidence;
+  factors: FlightRecommendation["scoreFactors"];
+  badges: RecommendationBadge[];
+};
+
 function effectiveTaxes(option: AwardOption, trip?: TripSummary): { amount: number; currency: string } | undefined {
   if (trip?.totalTaxes != null) return { amount: trip.totalTaxes, currency: trip.taxesCurrency ?? "USD" };
   if (option.taxes != null) return { amount: option.taxes, currency: option.taxesCurrency ?? "USD" };
@@ -16,28 +37,26 @@ function formatUsd(amount: number): string {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(amount);
 }
 
+function formatMinutes(minutes: number): string {
+  const hours = Math.floor(minutes / 60);
+  const remainder = Math.round(minutes % 60);
+  return hours ? `${hours}h${remainder ? ` ${remainder}m` : ""}` : `${remainder}m`;
+}
+
 function primaryCarrier(option: AwardOption, trip?: TripSummary): string[] {
   const carriers = trip?.carriers?.length ? trip.carriers : option.airlines.split(",");
   return carriers.map((carrier) => carrier.trim().toUpperCase()).filter(Boolean);
 }
 
-function confidence(option: AwardOption, trip?: TripSummary): FlightRecommendation["confidence"] {
-  if (option.remainingSeats && option.remainingSeats >= 2 && trip?.departsAt) return "high";
-  if (option.remainingSeats || trip?.departsAt) return "medium";
+function availabilityConfidence(option: AwardOption, trip?: TripSummary): RecommendationConfidence {
+  if ((option.remainingSeats ?? trip?.remainingSeats) && trip?.departsAt) return "high";
+  if ((option.remainingSeats ?? trip?.remainingSeats) || trip?.departsAt) return "medium";
   return "low";
 }
 
-const POSITIONING_PENALTY: Record<NonNullable<AwardOption["searchTier"]>, number> = {
-  exact: 0,
-  destination_gateway: 10_000,
-  country_pair: 20_000,
-  region_pair: 35_000,
-};
-
-/** Points-equivalent comfort costs used only to order otherwise viable awards. */
-const STOP_PENALTY = 6_000;
-const LAYOVER_PENALTY_PER_HOUR = 500;
-const MAX_SCORED_LAYOVER_MINUTES = 24 * 60;
+function confidenceOrder(value: RecommendationConfidence): number {
+  return { high: 2, medium: 1, low: 0 }[value];
+}
 
 function stopCount(option: AwardOption, trip?: TripSummary): number {
   if (option.direct) return 0;
@@ -48,98 +67,244 @@ function knownLayoverMinutes(trip?: TripSummary): number | undefined {
   const known = (trip?.connections ?? [])
     .map((connection) => connection.layoverMinutes)
     .filter((minutes): minutes is number => minutes != null && Number.isFinite(minutes) && minutes >= 0);
-  if (known.length === 0) return undefined;
-  return known.reduce((total, minutes) => total + minutes, 0);
+  return known.length ? known.reduce((total, minutes) => total + minutes, 0) : undefined;
 }
 
-function formatMinutes(minutes: number): string {
-  const hours = Math.floor(minutes / 60);
-  const remainder = minutes % 60;
-  return hours ? `${hours}h${remainder ? ` ${remainder}m` : ""}` : `${remainder}m`;
+function percentile(sorted: number[], percentileValue: number): number {
+  if (sorted.length === 1) return sorted[0];
+  const position = (sorted.length - 1) * percentileValue;
+  const lower = Math.floor(position);
+  const upper = Math.ceil(position);
+  const fraction = position - lower;
+  return sorted[lower] + (sorted[upper] - sorted[lower]) * fraction;
 }
 
-/**
- * The product ranking is deterministic and inspectable. The model later
- * explains this ranking; it does not silently decide which provider result is
- * allowed to lead the rail.
- */
-export async function rankRecommendations(
+/** Robust normalized cost score: outliers are clipped instead of flattening every useful difference. */
+export function normalizedValueScores(costs: number[]): number[] {
+  if (costs.length === 0) return [];
+  if (costs.length === 1) return [100];
+  const sorted = [...costs].sort((a, b) => a - b);
+  const low = sorted[0];
+  const high = costs.length >= 5 ? percentile(sorted, 0.75) : sorted.at(-1)!;
+  if (high <= low) return costs.map(() => 100);
+  // A two-option pool should not turn a small 5k-point difference into a
+  // misleading 100-vs-0 gulf. The floor preserves meaningful absolute scale.
+  const effectiveHigh = low + Math.max(high - low, 50_000);
+  return costs.map((cost) => Math.round(1000 * (effectiveHigh - Math.min(effectiveHigh, Math.max(low, cost))) / (effectiveHigh - low)) / 10);
+}
+
+function localHour(value?: string): number | undefined {
+  if (!value) return undefined;
+  const match = value.match(/T(\d{2}):/);
+  return match ? Number(match[1]) : undefined;
+}
+
+function relativeDurationScore(duration: number | undefined, durations: number[]): number {
+  if (duration == null || durations.length === 0) return 50;
+  const min = Math.min(...durations);
+  const max = Math.max(...durations);
+  if (max === min) return 100;
+  return 100 * (max - duration) / (max - min);
+}
+
+export function objectiveScheduleScore(
+  trip: TripSummary | undefined,
+  durations: number[],
+  avoidEarlyDepartures: boolean,
+  avoidLateArrivals: boolean,
+): number {
+  let score = relativeDurationScore(trip?.durationMinutes, durations);
+  const departureHour = localHour(trip?.departsAt);
+  const arrivalHour = localHour(trip?.arrivesAt);
+  if (avoidEarlyDepartures && departureHour != null && departureHour < 7) score -= 25;
+  if (avoidLateArrivals && arrivalHour != null && arrivalHour >= 23) score -= 25;
+  return Math.max(0, Math.min(100, score));
+}
+
+function connectionScore(option: AwardOption, trip?: TripSummary): number {
+  const stops = stopCount(option, trip);
+  let score = 100 - stops * 25;
+  for (const connection of trip?.connections ?? []) {
+    if (connection.layoverMinutes != null && connection.layoverMinutes < 45) score -= 20;
+    if (connection.layoverMinutes != null && connection.layoverMinutes > 240) score -= 15;
+  }
+  const tierPenalty = { exact: 0, destination_gateway: 30, country_pair: 45, region_pair: 60 }[option.searchTier ?? "exact"];
+  return Math.max(0, score - tierPenalty);
+}
+
+function weightedAverage(entries: Array<{ score: number; weight: number }>): number {
+  const totalWeight = entries.reduce((sum, entry) => sum + entry.weight, 0);
+  if (totalWeight === 0) return 50;
+  return entries.reduce((sum, entry) => sum + entry.score * entry.weight, 0) / totalWeight;
+}
+
+function experienceScore(
+  option: AwardOption,
+  trip: TripSummary | undefined,
+  assessment: CandidateAssessment | undefined,
+  scheduleScore: number,
   state: AgentStateType,
-): Promise<Partial<AgentStateType>> {
+): number {
+  const preferences = state.recommendationPreferences ?? defaultRecommendationPreferences();
+  const connectionWeight = Math.max(
+    preferences.priorityWeights.few_connections,
+    preferences.priorityWeights.connection_quality,
+  );
+  const entries = [
+    { score: scheduleScore, weight: preferences.priorityWeights.schedule },
+    { score: connectionScore(option, trip), weight: connectionWeight },
+    { score: (option.remainingSeats ?? trip?.remainingSeats) != null ? 100 : 60, weight: 25 },
+  ];
+  const dimensionWeights = {
+    cabin_product: preferences.priorityWeights.cabin_product,
+    booking_ease: preferences.priorityWeights.booking_ease,
+    transfer_risk: preferences.priorityWeights.low_transfer_risk,
+    connection_quality: preferences.priorityWeights.connection_quality,
+  } as const;
+  for (const [dimension, detail] of Object.entries(assessment?.dimensions ?? {})) {
+    if (!detail || !(dimension in dimensionWeights)) continue;
+    entries.push({ score: detail.score, weight: dimensionWeights[dimension as keyof typeof dimensionWeights] });
+  }
+  let score = weightedAverage(entries);
+  if ((state.searchPlan?.preferredAirlines ?? []).some((airline) => primaryCarrier(option, trip).includes(airline.toUpperCase()))) {
+    score = Math.min(100, score + 5);
+  }
+  return Math.round(score * 10) / 10;
+}
+
+function assessmentConfidence(
+  assessment: CandidateAssessment | undefined,
+  trip: TripSummary | undefined,
+): RecommendationConfidence {
+  if (assessment?.confidence === "high" && trip?.durationMinutes != null) return "high";
+  if (assessment?.confidence === "high" || assessment?.confidence === "medium" || trip?.durationMinutes != null) return "medium";
+  return "low";
+}
+
+function tieBreak(a: Candidate, b: Candidate): number {
+  return confidenceOrder(availabilityConfidence(b.option, b.trip)) - confidenceOrder(availabilityConfidence(a.option, a.trip))
+    || Number((b.option.searchTier ?? "exact") === "exact") - Number((a.option.searchTier ?? "exact") === "exact")
+    || a.cost - b.cost
+    || optionId(a.option).localeCompare(optionId(b.option));
+}
+
+function tradeoffAgainst(candidate: Candidate, cheapest: Candidate): NonNullable<FlightRecommendation["tradeoff"]> | undefined {
+  if (candidate === cheapest) return undefined;
+  const feeDifferenceUsd = candidate.taxes?.currency === "USD" && cheapest.taxes?.currency === "USD"
+    ? candidate.taxes.amount - cheapest.taxes.amount : undefined;
+  const durationSavedMinutes = candidate.trip?.durationMinutes != null && cheapest.trip?.durationMinutes != null
+    ? Math.max(0, cheapest.trip.durationMinutes - candidate.trip.durationMinutes) : undefined;
+  const stopsSaved = Math.max(0, stopCount(cheapest.option, cheapest.trip) - stopCount(candidate.option, candidate.trip));
+  return {
+    comparedWithId: optionId(cheapest.option),
+    extraMiles: candidate.option.miles - cheapest.option.miles,
+    ...(feeDifferenceUsd != null ? { feeDifferenceUsd } : {}),
+    ...(durationSavedMinutes ? { durationSavedMinutes } : {}),
+    ...(stopsSaved ? { stopsSaved } : {}),
+  };
+}
+
+function recommendationReason(candidate: Candidate, cheapest: Candidate, leading: boolean): string {
+  const tradeoff = tradeoffAgainst(candidate, cheapest);
+  if (leading && !tradeoff) return "Best overall: lowest blended cost among eligible options.";
+  if (leading && tradeoff?.stopsSaved) {
+    return `Best overall: saves ${tradeoff.stopsSaved} stop${tradeoff.stopsSaved === 1 ? "" : "s"} versus the lowest-cost option for ${Math.max(0, tradeoff.extraMiles).toLocaleString()} more miles.`;
+  }
+  if (leading && tradeoff?.durationSavedMinutes) {
+    return `Best overall: saves ${formatMinutes(tradeoff.durationSavedMinutes)} versus the lowest-cost option for ${Math.max(0, tradeoff.extraMiles).toLocaleString()} more miles.`;
+  }
+  if (leading) return "Best overall balance of normalized value and journey experience for your selected preference.";
+  if (candidate.badges.includes("best_value")) return "Lowest blended cost among eligible options.";
+  if (candidate.badges.includes("best_experience")) return "Strongest combined schedule and evidence-backed experience assessment.";
+  return "Eligible alternative with a different value and journey tradeoff.";
+}
+
+export async function rankRecommendations(state: AgentStateType): Promise<Partial<AgentStateType>> {
   const plan = state.searchPlan;
   const tripByAvailability = new Map((state.tripSummaries ?? []).map((trip) => [trip.availabilityId, trip]));
-  // Compiled graphs assess only the coverage shortlist. The fallback keeps
-  // direct callers and older checkpoints usable when the Phase 3 channel is
-  // absent, but an explicit empty shortlist correctly yields no cards.
-  const assessableOptions = state.candidateShortlist === undefined
-    ? state.awardResults ?? []
-    : state.candidateShortlist;
+  const assessableOptions = state.candidateShortlist === undefined ? state.awardResults ?? [] : state.candidateShortlist;
   const budgetEligibleOptions = plan ? filterByPointBalances(assessableOptions, plan) : assessableOptions;
-  const scored = budgetEligibleOptions.map((option) => {
+  const eligible = budgetEligibleOptions.flatMap((option) => {
     const trip = tripByAvailability.get(option.availabilityId);
     const taxes = effectiveTaxes(option, trip);
-    if (plan?.maxTaxesFeesUsd != null && taxes != null && taxes.currency === "USD" && taxes.amount > plan.maxTaxesFeesUsd) return null;
+    if (plan?.maxTaxesFeesUsd != null && taxes?.currency === "USD" && taxes.amount > plan.maxTaxesFeesUsd) return [];
     const seats = option.remainingSeats ?? trip?.remainingSeats;
-    // Hard exclusion, not a score penalty — an unknown seat count is not
-    // evidence of unavailability (many programs don't report one at all),
-    // but a KNOWN count below the traveler party size genuinely can't be booked.
-    if (seats != null && plan?.travelers && seats < plan.travelers) return null;
-    const carriers = primaryCarrier(option, trip);
-    const factors: FlightRecommendation["scoreFactors"] = [{ label: "Points", value: `${option.miles.toLocaleString()} miles` }];
-    if (taxes != null) factors.push({ label: "Taxes & fees", value: taxes.currency === "USD" ? formatUsd(taxes.amount) : `${taxes.amount} ${taxes.currency}` });
-    // Blended so a lower-mileage, higher-fee option doesn't automatically
-    // outrank a higher-mileage, lower-fee one — see points-value.ts.
-    let score = blendedCost(option.miles, taxes?.amount, taxes?.currency);
+    if (seats != null && plan?.travelers && seats < plan.travelers) return [];
+    if ((plan?.nonstopOnly || plan?.stopPreference === "nonstop") && !option.direct) return [];
+    if (plan?.stopPreference === "up_to_one" && stopCount(option, trip) > 1) return [];
+    return [{ option, trip, taxes, cost: blendedCost(option.miles, taxes?.amount, taxes?.currency) }];
+  });
 
-    const tier = option.searchTier ?? "exact";
-    score += POSITIONING_PENALTY[tier];
-    if (tier !== "exact") factors.push({ label: "Positioning", value: tier.replaceAll("_", " ") });
-
-    const stops = stopCount(option, trip);
-    const layoverMinutes = knownLayoverMinutes(trip);
-    if (option.direct) {
-      score -= plan?.stopPreference === "up_to_one" ? 4_000 : 1_500;
-      factors.push({ label: "Stops", value: "Nonstop" });
-    } else if (plan?.stopPreference === "nonstop") {
-      score += 1_000_000;
-      factors.push({ label: "Stops", value: "Connection — excluded by preference" });
-    } else {
-      score += stops * STOP_PENALTY;
-      factors.push({ label: "Stops", value: `${stops} stop${stops === 1 ? "" : "s"}` });
-      if (layoverMinutes != null) {
-        score += (Math.min(layoverMinutes, MAX_SCORED_LAYOVER_MINUTES) / 60) * LAYOVER_PENALTY_PER_HOUR;
-        factors.push({ label: "Layover", value: `${formatMinutes(layoverMinutes)} total` });
-      }
+  const valueScores = normalizedValueScores(eligible.map((candidate) => candidate.cost));
+  const durations = eligible.flatMap((candidate) => candidate.trip?.durationMinutes != null ? [candidate.trip.durationMinutes] : []);
+  const preferences = state.recommendationPreferences ?? defaultRecommendationPreferences();
+  const scored: Candidate[] = eligible.map((candidate, index) => {
+    const id = optionId(candidate.option);
+    const assessment = state.candidateAssessments?.[id];
+    const scheduleScore = objectiveScheduleScore(
+      candidate.trip,
+      durations,
+      preferences.schedulePreferences.avoidEarlyDepartures,
+      preferences.schedulePreferences.avoidLateArrivals,
+    );
+    const journeyScore = experienceScore(candidate.option, candidate.trip, assessment, scheduleScore, state);
+    const overallScore = valueScores[index] * (1 - preferences.experienceWeight / 100)
+      + journeyScore * (preferences.experienceWeight / 100);
+    const factors: FlightRecommendation["scoreFactors"] = [
+      { label: "Points", value: `${candidate.option.miles.toLocaleString()} miles` },
+    ];
+    if (candidate.taxes) factors.push({
+      label: "Taxes & fees",
+      value: candidate.taxes.currency === "USD" ? formatUsd(candidate.taxes.amount) : `${candidate.taxes.amount} ${candidate.taxes.currency}`,
+    });
+    const stops = stopCount(candidate.option, candidate.trip);
+    factors.push({ label: "Stops", value: stops === 0 ? "Nonstop" : `${stops} stop${stops === 1 ? "" : "s"}` });
+    const layover = knownLayoverMinutes(candidate.trip);
+    if (layover != null) factors.push({ label: "Layover", value: `${formatMinutes(layover)} total` });
+    if ((candidate.option.searchTier ?? "exact") !== "exact") {
+      factors.push({ label: "Positioning", value: (candidate.option.searchTier ?? "exact").replaceAll("_", " ") });
     }
+    const seats = candidate.option.remainingSeats ?? candidate.trip?.remainingSeats;
+    if (seats != null) factors.push({ label: "Seats", value: `${seats} available` });
+    factors.push(
+      { label: "Value", value: `${valueScores[index].toFixed(1)}/100` },
+      { label: "Experience", value: `${journeyScore.toFixed(1)}/100` },
+    );
+    return {
+      ...candidate,
+      carriers: primaryCarrier(candidate.option, candidate.trip),
+      valueScore: valueScores[index],
+      scheduleScore,
+      experienceScore: journeyScore,
+      overallScore: Math.round(overallScore * 10) / 10,
+      assessmentConfidence: assessmentConfidence(assessment, candidate.trip),
+      factors,
+      badges: [],
+    };
+  });
 
-    if (plan?.preferredAirlines?.some((airline) => carriers.includes(airline))) {
-      score -= 3_000;
-      factors.push({ label: "Airline", value: "Preferred carrier" });
-    }
+  const bestBy = (selector: (candidate: Candidate) => number): Candidate | undefined =>
+    [...scored].sort((a, b) => selector(b) - selector(a) || tieBreak(a, b))[0];
+  bestBy((candidate) => candidate.valueScore)?.badges.push("best_value");
+  bestBy((candidate) => candidate.experienceScore)?.badges.push("best_experience");
+  bestBy((candidate) => candidate.scheduleScore)?.badges.push("best_schedule");
+  scored.sort((a, b) => b.overallScore - a.overallScore || tieBreak(a, b));
+  scored[0]?.badges.unshift("best_overall");
+  const cheapest = [...scored].sort((a, b) => a.cost - b.cost || tieBreak(a, b))[0];
 
-    if (seats != null && plan?.travelers) {
-      score -= 800;
-      factors.push({ label: "Seats", value: `${seats} available` });
-    }
-
+  const recommendations: FlightRecommendation[] = scored.map((candidate, index) => {
+    const { option, trip, taxes } = candidate;
     const program = awardProgramForSource(option.program);
-    factors.push({ label: "Program", value: program?.name ?? option.program });
-    return { option, trip, carriers, score, factors, taxes };
-  }).filter((item): item is NonNullable<typeof item> => item !== null && item.score < 1_000_000).sort((a, b) => a.score - b.score || a.option.miles - b.option.miles);
-
-  const recommendations: FlightRecommendation[] = scored.map(({ option, trip, carriers, factors, taxes }, index) => {
-    const program = awardProgramForSource(option.program);
-    const leading = index === 0;
     const tier = option.searchTier ?? "exact";
     const needsPositioning = tier !== "exact";
     const before = needsPositioning && !(option.requestedOrigins ?? []).includes(option.origin)
-      ? `${(option.requestedOrigins ?? []).join("/")} → ${option.origin}`
-      : undefined;
+      ? `${(option.requestedOrigins ?? []).join("/")} → ${option.origin}` : undefined;
     const after = needsPositioning && !(option.requestedDestinations ?? []).includes(option.destination)
-      ? `${option.destination} → ${(option.requestedDestinations ?? []).join("/")}`
-      : undefined;
+      ? `${option.destination} → ${(option.requestedDestinations ?? []).join("/")}` : undefined;
+    const assessment = state.candidateAssessments?.[optionId(option)];
+    const evidenceIds = [...new Set(Object.values(assessment?.dimensions ?? {}).flatMap((detail) => detail?.evidenceIds ?? []))];
     return {
-      id: `${option.availabilityId}:${option.cabin}`,
+      id: optionId(option),
       rank: index + 1,
       origin: option.origin,
       destination: option.destination,
@@ -148,7 +313,7 @@ export async function rankRecommendations(
       miles: option.miles,
       taxes,
       program: { id: option.program, label: program?.name ?? option.program },
-      carriers,
+      carriers: candidate.carriers,
       direct: option.direct,
       stops: trip?.stops ?? (option.direct ? 0 : undefined),
       connections: trip?.connections,
@@ -159,11 +324,16 @@ export async function rankRecommendations(
       flightNumbers: trip?.flightNumbers ?? [],
       aircraft: trip?.aircraft ?? [],
       refreshedAt: option.refreshConfirmedAt ?? option.updatedAt,
-      reason: leading
-        ? `Best overall fit for your selected points, cabin, and stop preferences.`
-        : `A verified alternative with ${option.direct ? "a nonstop route" : "a competitive connecting itinerary"}.`,
-      scoreFactors: factors,
-      confidence: confidence(option, trip),
+      reason: recommendationReason(candidate, cheapest, index === 0),
+      scoreFactors: [...candidate.factors, { label: "Overall", value: `${candidate.overallScore.toFixed(1)}/100` }],
+      confidence: availabilityConfidence(option, trip),
+      valueScore: candidate.valueScore,
+      experienceScore: candidate.experienceScore,
+      overallScore: candidate.overallScore,
+      assessmentConfidence: candidate.assessmentConfidence,
+      evidenceIds,
+      badges: candidate.badges,
+      tradeoff: tradeoffAgainst(candidate, cheapest),
       positioning: needsPositioning ? {
         tier,
         before,
@@ -175,9 +345,8 @@ export async function rankRecommendations(
 
   const order = new Map(recommendations.map((recommendation) => [recommendation.id, recommendation.rank]));
   return {
-    // Preserve the larger raw set for audit/debugging while putting assessed
-    // options first. Only `recommendations` is user-facing.
-    awardResults: [...(state.awardResults ?? assessableOptions)].sort((a, b) => (order.get(`${a.availabilityId}:${a.cabin}`) ?? Infinity) - (order.get(`${b.availabilityId}:${b.cabin}`) ?? Infinity)),
+    awardResults: [...(state.awardResults ?? assessableOptions)].sort((a, b) =>
+      (order.get(optionId(a)) ?? Infinity) - (order.get(optionId(b)) ?? Infinity)),
     recommendations,
   };
 }

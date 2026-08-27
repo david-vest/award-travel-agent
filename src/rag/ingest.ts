@@ -62,7 +62,7 @@ async function loadDocuments(): Promise<Document[]> {
   return docs;
 }
 
-/** Any document more than a year old is worth a human glance before it's trusted again. */
+/** Legacy fallback for documents that do not yet declare an explicit review date. */
 const STALE_AFTER_DAYS = 365;
 
 /** Non-blocking — a stale doc still ingests; this only reports it. */
@@ -70,6 +70,8 @@ function reportStaleDocs(docs: Document[]): void {
   const staleAfterMs = STALE_AFTER_DAYS * 86_400_000;
   const now = Date.now();
   const stale = docs.filter((d) => {
+    const reviewAfter = Date.parse(String(d.metadata.reviewAfter ?? ""));
+    if (!Number.isNaN(reviewAfter)) return now > reviewAfter;
     const updated = Date.parse(String(d.metadata.updated));
     return !Number.isNaN(updated) && now - updated > staleAfterMs;
   });
@@ -101,7 +103,13 @@ async function ensureVectorIndex(collectionName: string, numDimensions: number):
           { type: "filter", path: "collection" },
           { type: "filter", path: "airlines" },
           { type: "filter", path: "programs" },
+          { type: "filter", path: "creditPrograms" },
           { type: "filter", path: "cabin" },
+          { type: "filter", path: "aircraft" },
+          { type: "filter", path: "regions" },
+          { type: "filter", path: "airports" },
+          { type: "filter", path: "routes" },
+          { type: "filter", path: "dimensions" },
         ],
       },
     });

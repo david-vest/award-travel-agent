@@ -47,6 +47,8 @@ describe("AgentState", () => {
   it("defaults collections to empty arrays", () => {
     expect(asAggregate(AgentState.spec.kbDocs).initialValueFactory?.()).toEqual([]);
     expect(asAggregate(AgentState.spec.candidateShortlist).initialValueFactory?.()).toEqual([]);
+    expect(asAggregate(AgentState.spec.optionEvidence).initialValueFactory?.()).toEqual({});
+    expect(asAggregate(AgentState.spec.candidateAssessments).initialValueFactory?.()).toEqual({});
     expect(asAggregate(AgentState.spec.violations).initialValueFactory?.()).toEqual([]);
   });
 

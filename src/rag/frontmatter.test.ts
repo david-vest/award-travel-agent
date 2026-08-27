@@ -71,6 +71,16 @@ describe("frontmatterSchema", () => {
     ).toThrow();
   });
 
+  it("requires sources for any document allowed to affect scoring", () => {
+    expect(() => frontmatterSchema.parse({
+      id: "airport-note",
+      collection: "airports",
+      updated: "2026-06-01",
+      airports: ["LAX"],
+      dimensions: ["connection_quality"],
+    })).toThrow(/scoring/i);
+  });
+
   it("allows a program id that isn't seats.aero-searchable (e.g. a card transfer partner our search tool can't query)", () => {
     // knowledge/transfers/*.md legitimately lists every real transfer
     // partner a card has, including airlines seats.aero doesn't track

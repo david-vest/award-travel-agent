@@ -21,7 +21,7 @@ export function embeddings(): VoyageEmbeddings {
  * caveat that makes it actionable.
  */
 export function toDocument(
-  fm: KbFrontmatter,
+  fm: KbFrontmatter | (Omit<KbFrontmatter, "airports" | "routes" | "dimensions" | "creditPrograms"> & Partial<Pick<KbFrontmatter, "airports" | "routes" | "dimensions" | "creditPrograms">>),
   body: string,
   filePath: string,
 ): Document {
@@ -34,13 +34,40 @@ export function toDocument(
       airlines: fm.airlines.map((a) => a.toUpperCase()),
       aircraft: fm.aircraft,
       programs: fm.programs.map((p) => p.toLowerCase()),
+      creditPrograms: (fm.creditPrograms ?? []).map((program) => program.toLowerCase()),
       regions: fm.regions,
+      airports: (fm.airports ?? []).map((airport) => airport.toUpperCase()),
+      routes: (fm.routes ?? []).map((route) => route.toUpperCase()),
+      dimensions: fm.dimensions ?? [],
       cabin: fm.cabin ?? null,
+      productName: fm.productName ?? null,
       updated: fm.updated,
+      reviewAfter: fm.reviewAfter ?? null,
       sources: fm.sources,
       path: filePath,
     },
   });
+}
+
+/** Exact metadata lookup used before semantic retrieval for ranking evidence. */
+export async function findKnowledgeDocuments(
+  filter: Record<string, unknown>,
+  limit: number = 80,
+): Promise<Document[]> {
+  const client = await mongoClient();
+  const rows = await client
+    .db(DB_NAME)
+    .collection(KB_COLLECTION)
+    .find(filter, { projection: { embedding: 0 } })
+    .limit(limit)
+    .toArray();
+
+  return rows.map((row) => new Document({
+    pageContent: String(row.text ?? ""),
+    metadata: Object.fromEntries(
+      Object.entries(row).filter(([key]) => !["_id", "text"].includes(key)),
+    ),
+  }));
 }
 
 let cachedClient: MongoClient | undefined;

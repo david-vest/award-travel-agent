@@ -15,8 +15,11 @@ graph TD;
 	plan_discovery(plan_discovery)
 	search_awards(search_awards)
 	search_positioning(search_positioning)
+	interpret_preferences(interpret_preferences)
+	build_candidate_shortlist(build_candidate_shortlist)
 	enrich_trips(enrich_trips)
 	retrieve_knowledge(retrieve_knowledge)
+	assess_candidate_experience(assess_candidate_experience)
 	rank_recommendations(rank_recommendations)
 	synthesize(synthesize)
 	refresh_availability(refresh_availability)
@@ -25,17 +28,20 @@ graph TD;
 	emit(emit)
 	__end__([<p>__end__</p>]):::last
 	__start__ --> guard_input;
+	assess_candidate_experience --> rank_recommendations;
+	build_candidate_shortlist --> enrich_trips;
 	degrade --> emit;
 	emit --> __end__;
-	plan_discovery --> search_awards;
-	plan_search --> search_awards;
-	prepare_ui_search --> search_awards;
+	interpret_preferences --> search_awards;
+	plan_discovery --> interpret_preferences;
+	plan_search --> interpret_preferences;
+	prepare_ui_search --> interpret_preferences;
 	rank_recommendations --> synthesize;
-	refresh_availability --> enrich_trips;
+	refresh_availability --> build_candidate_shortlist;
 	refuse --> emit;
 	resolve_ui_locations --> prepare_ui_search;
-	retrieve_knowledge --> rank_recommendations;
-	search_positioning --> enrich_trips;
+	retrieve_knowledge --> assess_candidate_experience;
+	search_positioning --> build_candidate_shortlist;
 	synthesize --> verify_groundedness;
 	guard_input -.-> triage;
 	guard_input -.-> resolve_ui_locations;
@@ -44,7 +50,7 @@ graph TD;
 	triage -.-> plan_discovery;
 	triage -.-> retrieve_knowledge;
 	search_awards -.-> refresh_availability;
-	search_awards -.-> enrich_trips;
+	search_awards -.-> build_candidate_shortlist;
 	enrich_trips -.-> search_positioning;
 	enrich_trips -.-> retrieve_knowledge;
 	verify_groundedness -.-> synthesize;

@@ -1,7 +1,8 @@
 import { Annotation, messagesStateReducer } from "@langchain/langgraph";
 import type { BaseMessage } from "@langchain/core/messages";
 import type { AwardOption, TripSummary } from "../tools";
-import type { RetrievedDoc } from "../rag/retriever";
+import type { OptionEvidence, RetrievedDoc } from "../rag/retriever";
+import type { CandidateAssessments } from "../domain/candidate-assessment";
 import type { FlightRecommendation, TripRequest } from "../contracts/travel-search";
 import {
   defaultRecommendationPreferences,
@@ -173,6 +174,10 @@ export const AgentState = Annotation.Root({
   tripSummaries: Annotation<TripSummary[]>(replace<TripSummary[]>(() => [])),
   recommendations: Annotation<FlightRecommendation[]>(replace<FlightRecommendation[]>(() => [])),
   kbDocs: Annotation<RetrievedDoc[]>(replace<RetrievedDoc[]>(() => [])),
+  /** Strictly matched scoring evidence, keyed by recommendation option ID. */
+  optionEvidence: Annotation<OptionEvidence>(replace<OptionEvidence>(() => ({}))),
+  /** Bounded qualitative model output; objective flight facts are scored later in code. */
+  candidateAssessments: Annotation<CandidateAssessments>(replace<CandidateAssessments>(() => ({}))),
   recommendationPreferences: Annotation<RecommendationPreferences>(
     replace<RecommendationPreferences>(defaultRecommendationPreferences),
   ),

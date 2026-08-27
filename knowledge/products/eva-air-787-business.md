@@ -5,7 +5,10 @@ airlines: [BR]
 aircraft: ["787-9", "787-10", "Boeing 787"]
 cabin: business
 programs: [united, aeroplan]
+dimensions: [cabin_product]
+productName: "EVA Air Royal Laurel"
 updated: 2026-08-13
+reviewAfter: 2027-02-13
 sources: ["https://www.evaair.com/en-us/flying-with-us/cabin/business-class/"]
 ---
 

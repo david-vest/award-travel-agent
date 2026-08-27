@@ -5,7 +5,10 @@ airlines: [UA]
 aircraft: ["767-300ER", "Boeing 767-300ER"]
 cabin: business
 programs: [united, aeroplan]
+dimensions: [cabin_product]
+productName: "United Polaris 767"
 updated: 2026-08-13
+reviewAfter: 2027-02-13
 sources: ["https://www.united.com/en/us/fly/travel/inflight/polaris.html"]
 ---
 

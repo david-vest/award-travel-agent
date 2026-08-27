@@ -1,15 +1,23 @@
 import { beforeEach, describe, it, expect, vi } from "vitest";
 
-const similaritySearch = vi.fn();
+const { similaritySearch, findKnowledgeDocuments } = vi.hoisted(() => ({
+  similaritySearch: vi.fn(),
+  findKnowledgeDocuments: vi.fn(),
+}));
 vi.mock("./store", () => ({
   getVectorStore: vi.fn(async () => ({ similaritySearch })),
+  findKnowledgeDocuments,
 }));
 
 import {
   buildPreFilter,
   buildRetrievalQuery,
+  linkEvidenceToOptions,
+  normalizeAircraft,
+  retrieveEvidenceForOptions,
   retrieveKnowledge,
 } from "./retriever";
+import type { RetrievedDoc } from "./retriever";
 import type { AwardOption, TripSummary } from "../tools";
 
 const option = (over: Partial<AwardOption> = {}): AwardOption => ({
@@ -165,5 +173,101 @@ describe("retrieveKnowledge", () => {
       expect.any(Number),
       undefined,
     );
+  });
+});
+
+const evidence = (over: Partial<RetrievedDoc> = {}): RetrievedDoc => ({
+  id: "ana-room",
+  collection: "products",
+  text: "A sourced product note.",
+  sources: ["https://example.com/source"],
+  updated: "2026-08-01",
+  airlines: ["NH"],
+  aircraft: ["Boeing 777-300ER"],
+  programs: [],
+  regions: [],
+  airports: [],
+  routes: [],
+  dimensions: ["cabin_product"],
+  cabin: "business",
+  reviewAfter: "2027-01-01",
+  ...over,
+});
+
+describe("option-specific evidence", () => {
+  it("normalizes provider aircraft aliases without broad fuzzy matching", () => {
+    expect(normalizeAircraft("77W")).toBe(normalizeAircraft("Boeing 777-300ER"));
+    expect(normalizeAircraft("A359")).toBe(normalizeAircraft("Airbus A350-900"));
+  });
+
+  it("isolates cabin-product evidence by carrier, aircraft, and cabin", () => {
+    const options = [option(), option({ availabilityId: "ua", airlines: "UA" })];
+    const trips = [
+      { availabilityId: "a1", tripId: "t1", flightNumbers: [], aircraft: ["77W"], carriers: ["NH"], stops: 0 },
+      { availabilityId: "ua", tripId: "t2", flightNumbers: [], aircraft: ["777-300ER"], carriers: ["UA"], stops: 0 },
+    ];
+    const linked = linkEvidenceToOptions(options, trips, [evidence()]);
+    expect(linked["a1:business"]).toHaveLength(1);
+    expect(linked["ua:business"]).toHaveLength(0);
+  });
+
+  it("isolates booking and transfer evidence by the actual award program", () => {
+    const booking = evidence({ id: "aeroplan-booking", collection: "booking", airlines: [], aircraft: [], programs: ["aeroplan"], dimensions: ["booking_ease"] });
+    const linked = linkEvidenceToOptions(
+      [option(), option({ availabilityId: "united", program: "united" })],
+      [],
+      [booking],
+    );
+    expect(linked["a1:business"]).toHaveLength(1);
+    expect(linked["united:business"]).toHaveLength(0);
+  });
+
+  it("uses transfer-risk evidence only for a selected credit-card ecosystem", () => {
+    const transfer = evidence({
+      id: "chase-transfer",
+      collection: "transfers",
+      airlines: [],
+      aircraft: [],
+      programs: ["aeroplan"],
+      creditPrograms: ["chase"],
+      dimensions: ["transfer_risk"],
+    });
+    expect(linkEvidenceToOptions([option()], [], [transfer], [], new Date(), ["chase"])["a1:business"]).toHaveLength(1);
+    expect(linkEvidenceToOptions([option()], [], [transfer], [], new Date(), ["amex"])["a1:business"]).toHaveLength(0);
+  });
+
+  it("matches connection evidence only to an airport used by that itinerary", () => {
+    const airportDoc = evidence({ id: "lax-transfer", collection: "airports", airlines: [], aircraft: [], airports: ["LAX"], dimensions: ["connection_quality"] });
+    const linked = linkEvidenceToOptions(
+      [option({ direct: false })],
+      [{ availabilityId: "a1", tripId: "t1", flightNumbers: [], aircraft: [], carriers: ["NH"], stops: 1, connections: [{ airport: "LAX" }] }],
+      [airportDoc],
+    );
+    expect(linked["a1:business"]?.[0].match?.reasons).toContain("connection airport");
+  });
+
+  it("downgrades stale exact evidence and rejects unrelated semantic fallback", () => {
+    const stale = evidence({ reviewAfter: "2026-01-01" });
+    const unrelated = evidence({ id: "unrelated", airlines: ["BA"], aircraft: ["A380"] });
+    const linked = linkEvidenceToOptions(
+      [option()],
+      [{ availabilityId: "a1", tripId: "t1", flightNumbers: [], aircraft: ["77W"], carriers: ["NH"], stops: 0 }],
+      [stale],
+      [unrelated],
+      new Date("2026-08-26T00:00:00Z"),
+    );
+    expect(linked["a1:business"]).toHaveLength(1);
+    expect(linked["a1:business"]?.[0].match).toMatchObject({ stale: true, confidence: "medium" });
+  });
+
+  it("performs one bounded exact lookup and one semantic supplement", async () => {
+    findKnowledgeDocuments.mockReset();
+    similaritySearch.mockReset();
+    findKnowledgeDocuments.mockResolvedValueOnce([]);
+    similaritySearch.mockResolvedValueOnce([]);
+    expect(await retrieveEvidenceForOptions("best option?", [option()])).toEqual({ "a1:business": [] });
+    expect(findKnowledgeDocuments).toHaveBeenCalledOnce();
+    expect(similaritySearch).toHaveBeenCalledOnce();
+    expect(similaritySearch.mock.calls[0]?.[1]).toBe(12);
   });
 });

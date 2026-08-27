@@ -14,6 +14,7 @@ import { enrichTrips } from "./nodes/enrich";
 import { interpretPreferences } from "./nodes/interpret-preferences";
 import { buildCandidateShortlist } from "./nodes/build-candidate-shortlist";
 import { retrieveKnowledgeNode } from "./nodes/retrieve";
+import { assessCandidateExperience } from "./nodes/assess-candidate-experience";
 import { rankRecommendations } from "./nodes/rank-recommendations";
 import { synthesize } from "./nodes/synthesize";
 import { refreshAvailability } from "./nodes/refresh";
@@ -63,6 +64,7 @@ function buildStateGraph() {
     .addNode("build_candidate_shortlist", buildCandidateShortlist)
     .addNode("enrich_trips", enrichTrips)
     .addNode("retrieve_knowledge", retrieveKnowledgeNode)
+    .addNode("assess_candidate_experience", assessCandidateExperience)
     .addNode("rank_recommendations", rankRecommendations)
     .addNode("synthesize", synthesizeAndCount)
     .addNode("refresh_availability", refreshAvailability)
@@ -100,7 +102,8 @@ function buildStateGraph() {
       retrieve_knowledge: "retrieve_knowledge",
     })
     .addEdge("search_positioning", "build_candidate_shortlist")
-    .addEdge("retrieve_knowledge", "rank_recommendations")
+    .addEdge("retrieve_knowledge", "assess_candidate_experience")
+    .addEdge("assess_candidate_experience", "rank_recommendations")
     .addEdge("rank_recommendations", "synthesize")
     .addEdge("synthesize", "verify_groundedness")
     .addConditionalEdges("verify_groundedness", routeAfterVerify, {

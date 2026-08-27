@@ -2,7 +2,10 @@
 id: citi-thankyou-transfer-partners
 collection: transfers
 programs: [american, turkish, lifemiles, flyingblue, cathaypacific, evaair, qatar, singapore, virginatlantic, jetblue, etihad, emirates, qantas, thaiairways]
+creditPrograms: [citi]
+dimensions: [transfer_risk]
 updated: 2026-08-13
+reviewAfter: 2026-11-13
 sources: ["https://www.thankyou.com/transfer-partners"]
 ---
 
