@@ -5,6 +5,7 @@ export const PREFERENCE_INTERPRETER_VERSION = "bounded-v1";
 export const CANDIDATE_SHORTLIST_VERSION = "coverage-v1";
 export const EVIDENCE_RETRIEVAL_VERSION = "option-linked-v1";
 export const EXPERIENCE_ASSESSMENT_VERSION = "evidence-bounded-v1";
+export const PREFERENCE_RERANK_VERSION = "checkpoint-reuse-v1";
 
 export const RANKING_LEVELS = [
   { value: 0, label: "Lowest points & fees" },

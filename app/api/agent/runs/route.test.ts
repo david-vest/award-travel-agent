@@ -118,6 +118,7 @@ describe("POST /api/agent/runs", () => {
       preference_interpreter_version: "bounded-v1",
       evidence_retrieval_version: "option-linked-v1",
       experience_assessment_version: "evidence-bounded-v1",
+      preference_rerank_version: "checkpoint-reuse-v1",
       candidate_shortlist_version: "coverage-v1",
       ranking_experience_weight: 75,
       ranking_priorities: ["cabin_product", "schedule"],
@@ -220,5 +221,28 @@ describe("POST /api/agent/runs", () => {
     expect(completeEvent).toBeDefined();
     expect(completeEvent?.recommendations).toHaveLength(1);
     expect(completeEvent?.searchRan).toBe(true);
+  });
+
+  it("emits reranked recommendations while explicitly reporting that no new search ran", async () => {
+    mockGraphStream.mockImplementation(async function* () {
+      yield { update_rerank_preferences: { recommendationPreferences: { experienceWeight: 30, priorities: [], rationale: "Prefer lower cost." } } };
+      yield { rank_recommendations: { recommendations: [{ ...sampleFlight, id: "cheaper:business", miles: 50_000 }] } };
+      yield { synthesize: { draft: "I reused the verified options and moved value higher." } };
+    });
+    const request = new Request("http://localhost/api/agent/runs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: "make it cheaper",
+        threadId: "c0000000-0000-4000-8000-000000000000",
+      }),
+    });
+    const events = await collectEvents(await POST(request));
+    expect(events.find((event): event is Extract<AgentEvent, { type: "results" }> => event.type === "results")?.recommendations[0].id).toBe("cheaper:business");
+    const complete = events.find((event): event is Extract<AgentEvent, { type: "complete" }> => event.type === "complete");
+    expect(complete).toMatchObject({ searchRan: false, recommendations: [{ id: "cheaper:business" }] });
+    const details = events.filter((event): event is Extract<AgentEvent, { type: "stage" }> => event.type === "stage").map((event) => event.detail);
+    expect(details).toContain("Reused the existing verified availability; no provider search was run.");
+    expect(details).toContain("Reused cached itinerary details and qualitative evidence; no reassessment was needed.");
   });
 });

@@ -15,6 +15,7 @@ import { interpretPreferences } from "./nodes/interpret-preferences";
 import { buildCandidateShortlist } from "./nodes/build-candidate-shortlist";
 import { retrieveKnowledgeNode } from "./nodes/retrieve";
 import { assessCandidateExperience } from "./nodes/assess-candidate-experience";
+import { updateRerankPreferences } from "./nodes/update-rerank-preferences";
 import { rankRecommendations } from "./nodes/rank-recommendations";
 import { synthesize } from "./nodes/synthesize";
 import { refreshAvailability } from "./nodes/refresh";
@@ -56,8 +57,14 @@ function buildStateGraph() {
     // planSearch(state, undefined) there — identical to planSearch(state),
     // since a literal undefined still triggers planSearch's own `now`
     // default parameter.
-    .addNode("plan_search", (state: AgentStateType) => planSearch(state, currentPlanSearchClock()?.()))
-    .addNode("plan_discovery", planDiscovery)
+    .addNode("plan_search", async (state: AgentStateType) => ({
+      ...(await planSearch(state, currentPlanSearchClock()?.())),
+      recommendationSnapshot: null,
+    }))
+    .addNode("plan_discovery", async (state: AgentStateType) => ({
+      ...(await planDiscovery(state)),
+      recommendationSnapshot: null,
+    }))
     .addNode("search_awards", searchAwards)
     .addNode("search_positioning", searchPositioningOptions)
     .addNode("interpret_preferences", interpretPreferences)
@@ -65,6 +72,7 @@ function buildStateGraph() {
     .addNode("enrich_trips", enrichTrips)
     .addNode("retrieve_knowledge", retrieveKnowledgeNode)
     .addNode("assess_candidate_experience", assessCandidateExperience)
+    .addNode("update_rerank_preferences", updateRerankPreferences)
     .addNode("rank_recommendations", rankRecommendations)
     .addNode("synthesize", synthesizeAndCount)
     .addNode("refresh_availability", refreshAvailability)
@@ -84,6 +92,7 @@ function buildStateGraph() {
       plan_search: "plan_search",
       plan_discovery: "plan_discovery",
       retrieve_knowledge: "retrieve_knowledge",
+      update_rerank_preferences: "update_rerank_preferences",
     })
 
     .addEdge("resolve_ui_locations", "prepare_ui_search")
@@ -104,6 +113,7 @@ function buildStateGraph() {
     .addEdge("search_positioning", "build_candidate_shortlist")
     .addEdge("retrieve_knowledge", "assess_candidate_experience")
     .addEdge("assess_candidate_experience", "rank_recommendations")
+    .addEdge("update_rerank_preferences", "rank_recommendations")
     .addEdge("rank_recommendations", "synthesize")
     .addEdge("synthesize", "verify_groundedness")
     .addConditionalEdges("verify_groundedness", routeAfterVerify, {

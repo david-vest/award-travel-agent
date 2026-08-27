@@ -25,6 +25,7 @@ vi.mock("./nodes/build-candidate-shortlist", () => ({ buildCandidateShortlist: v
 vi.mock("./nodes/enrich", () => ({ enrichTrips: vi.fn() }));
 vi.mock("./nodes/retrieve", () => ({ retrieveKnowledgeNode: vi.fn() }));
 vi.mock("./nodes/assess-candidate-experience", () => ({ assessCandidateExperience: vi.fn() }));
+vi.mock("./nodes/update-rerank-preferences", () => ({ updateRerankPreferences: vi.fn() }));
 vi.mock("./nodes/rank-recommendations", () => ({ rankRecommendations: vi.fn() }));
 vi.mock("./nodes/synthesize", () => ({ synthesize: vi.fn() }));
 
@@ -41,6 +42,7 @@ import { buildCandidateShortlist } from "./nodes/build-candidate-shortlist";
 import { enrichTrips } from "./nodes/enrich";
 import { retrieveKnowledgeNode } from "./nodes/retrieve";
 import { assessCandidateExperience } from "./nodes/assess-candidate-experience";
+import { updateRerankPreferences } from "./nodes/update-rerank-preferences";
 import { rankRecommendations } from "./nodes/rank-recommendations";
 import { synthesize } from "./nodes/synthesize";
 import * as degradeModule from "./nodes/degrade";
@@ -68,6 +70,7 @@ describe("graph", () => {
       "enrich_trips",
       "retrieve_knowledge",
       "assess_candidate_experience",
+      "update_rerank_preferences",
       "rank_recommendations",
       "synthesize",
     ]) {
@@ -151,6 +154,9 @@ describe("graph traversal", () => {
     );
     vi.mocked(assessCandidateExperience).mockImplementation(
       rec("assess_candidate_experience", { candidateAssessments: {} }),
+    );
+    vi.mocked(updateRerankPreferences).mockImplementation(
+      rec("update_rerank_preferences", { recommendationPreferences: undefined }),
     );
     vi.mocked(rankRecommendations).mockImplementation(
       rec("rank_recommendations", { recommendations: [] }),
@@ -242,6 +248,26 @@ describe("graph traversal", () => {
     expect(visited).not.toContain("plan_search");
     expect(visited).not.toContain("plan_discovery");
     expect(visited).not.toContain("search_awards");
+  });
+
+  it("reranks a preference-only follow-up without provider, enrichment, retrieval, or assessment calls", async () => {
+    vi.mocked(triage).mockImplementation(rec("triage", { intent: "rerank" }));
+    await invokeGraph("make it cheaper", { recommendationSnapshot: {} as never });
+    expect(visited).toContain("update_rerank_preferences");
+    expect(visited).toContain("rank_recommendations");
+    expect(visited).not.toContain("search_awards");
+    expect(visited).not.toContain("refresh_availability");
+    expect(visited).not.toContain("enrich_trips");
+    expect(visited).not.toContain("retrieve_knowledge");
+    expect(visited).not.toContain("assess_candidate_experience");
+  });
+
+  it("still invokes the provider path when a follow-up changes search criteria", async () => {
+    vi.mocked(triage).mockImplementation(rec("triage", { intent: "route_search" }));
+    await invokeGraph("nonstop only");
+    expect(visited).toContain("plan_search");
+    expect(visited).toContain("search_awards");
+    expect(visited).not.toContain("update_rerank_preferences");
   });
 
   it("skips every downstream node and goes straight to emit when guard rejects", async () => {

@@ -38,6 +38,10 @@ describe("routeAfterTriage", () => {
     );
   });
 
+  it("routes a preference-only follow-up directly to reranking", () => {
+    expect(routeAfterTriage(s({ intent: "rerank" }))).toBe("update_rerank_preferences");
+  });
+
   it("falls back to retrieval on an unexpected intent rather than throwing", () => {
     expect(routeAfterTriage(s({ intent: null }))).toBe("retrieve_knowledge");
   });

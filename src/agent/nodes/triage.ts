@@ -8,7 +8,7 @@ import { inferMultiCityRoute } from "../../tools/seats-aero/multi-city-codes";
 import type { AgentStateType, Intent } from "../state";
 
 export const triageSchema = z.object({
-  intent: z.enum(["route_search", "discovery", "knowledge"]),
+  intent: z.enum(["route_search", "discovery", "knowledge", "rerank"]),
   reasoning: z.string().describe("One sentence explaining the classification"),
 });
 
@@ -81,6 +81,13 @@ export async function triage(
 ): Promise<Partial<AgentStateType>> {
   const text = lastUserText(state);
 
+  const hardSearchChange = /\b(?:nonstop only|direct only|no stops?|up to one stop|economy|premium economy|business class|first class|\d+\s+(?:traveler|travelers|people|passengers)|(?:use|only|exclude)\s+[a-z]+\s+(?:miles|points)|(?:from\s+.+\s+to|to\s+[A-Z]{3}\b)|(?:january|february|march|april|may|june|july|august|september|october|november|december)|\d{4}-\d{2}-\d{2})\b/i.test(text);
+  const preferenceOnly = /\b(?:make it cheaper|cheaper|lower (?:cost|points|miles|fees)|value first|prioriti[sz]e (?:the )?(?:seat|cabin|schedule|experience|connections?|booking)|better (?:seat|cabin|schedule|experience)|fewer stops?|avoid (?:early|late|long layovers?)|easier (?:connections?|booking)|lower transfer risk|journey first)\b/i.test(text);
+  if (state.recommendationSnapshot && hardSearchChange) return { intent: "route_search" };
+  if (state.recommendationSnapshot && preferenceOnly && !hardSearchChange) {
+    return { intent: "rerank" };
+  }
+
   // Published multi-city groups on both sides are already a complete route.
   // Do this before the classifier: the LangSmith regression returned a valid
   // but wrong `discovery` label, so catch-only heuristics could never repair it.
@@ -104,8 +111,8 @@ export async function triage(
   // Conversation context goes in the USER turn, never the system prompt —
   // it changes every request and would invalidate any cached prefix.
   const userContent = context
-    ? `Earlier in this conversation:\n${context}\n\nClassify this message:\n${text}`
-    : `Classify this message:\n${text}`;
+    ? `Reusable verified recommendations: ${state.recommendationSnapshot ? "yes" : "no"}.\nEarlier in this conversation:\n${context}\n\nClassify this message:\n${text}`
+    : `Reusable verified recommendations: ${state.recommendationSnapshot ? "yes" : "no"}.\nClassify this message:\n${text}`;
 
   // thinking:"adaptive" + withStructuredOutput's forced tool calling don't
   // always compose cleanly (see models.ts). A triage failure should not kill
@@ -117,6 +124,7 @@ export async function triage(
       { role: "user", content: userContent },
     ]);
 
+    if (result.intent === "rerank" && (!state.recommendationSnapshot || hardSearchChange)) return { intent: "route_search" };
     return { intent: result.intent as Intent };
   } catch {
     // A classifier outage must not turn an obvious availability request into

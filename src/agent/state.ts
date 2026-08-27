@@ -9,7 +9,7 @@ import {
   type RecommendationPreferences,
 } from "../domain/recommendation-preferences";
 
-export type Intent = "route_search" | "discovery" | "knowledge" | "rejected";
+export type Intent = "route_search" | "discovery" | "knowledge" | "rerank" | "rejected";
 export type SearchStatus = "not_run" | "searched" | "provider_error";
 
 /**
@@ -85,6 +85,20 @@ export type SearchAttempt = {
   destinations: string[];
   reason: string;
   resultCount: number;
+};
+
+/** Durable, already-paid-for recommendation inputs reusable across follow-up turns. */
+export type RecommendationSnapshot = {
+  awardResults: AwardOption[];
+  candidateShortlist: AwardOption[];
+  tripSummaries: TripSummary[];
+  kbDocs: RetrievedDoc[];
+  optionEvidence: OptionEvidence;
+  candidateAssessments: CandidateAssessments;
+  recommendations: FlightRecommendation[];
+  recommendationPreferences: RecommendationPreferences;
+  searchStatus: SearchStatus;
+  refreshedAt: string | null;
 };
 
 /** Replace-on-write: a fresh search supersedes the previous one entirely. */
@@ -178,6 +192,10 @@ export const AgentState = Annotation.Root({
   optionEvidence: Annotation<OptionEvidence>(replace<OptionEvidence>(() => ({}))),
   /** Bounded qualitative model output; objective flight facts are scored later in code. */
   candidateAssessments: Annotation<CandidateAssessments>(replace<CandidateAssessments>(() => ({}))),
+  /** Not reset by guard_input; replaced only by a completed search/rerank or an explicit new search. */
+  recommendationSnapshot: Annotation<RecommendationSnapshot | null>(
+    replace<RecommendationSnapshot | null>(() => null),
+  ),
   recommendationPreferences: Annotation<RecommendationPreferences>(
     replace<RecommendationPreferences>(defaultRecommendationPreferences),
   ),

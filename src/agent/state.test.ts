@@ -49,6 +49,7 @@ describe("AgentState", () => {
     expect(asAggregate(AgentState.spec.candidateShortlist).initialValueFactory?.()).toEqual([]);
     expect(asAggregate(AgentState.spec.optionEvidence).initialValueFactory?.()).toEqual({});
     expect(asAggregate(AgentState.spec.candidateAssessments).initialValueFactory?.()).toEqual({});
+    expect(asAggregate(AgentState.spec.recommendationSnapshot).initialValueFactory?.()).toBeNull();
     expect(asAggregate(AgentState.spec.violations).initialValueFactory?.()).toEqual([]);
   });
 

@@ -85,6 +85,7 @@ export async function prepareUiSearch(
     kbDocs: [],
     optionEvidence: {},
     candidateAssessments: {},
+    recommendationSnapshot: null,
     draft: null,
     violations: [],
     refreshedAt: null,

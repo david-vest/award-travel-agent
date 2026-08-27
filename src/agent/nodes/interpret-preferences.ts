@@ -40,7 +40,7 @@ function uniquePriorities(priorities: RankingPriority[]): RankingPriority[] {
 /** Deterministic safety net used when structured model interpretation is unavailable. */
 export function interpretPreferenceKeywords(notes: string): PreferenceInterpretation {
   const priorities: RankingPriority[] = [];
-  const cheap = /\b(?:cheap(?:est)?|lowest (?:points|miles|cost)|save (?:points|miles)|minimi[sz]e (?:points|miles|cost|fees)|value first)\b/i.test(notes);
+  const cheap = /\b(?:cheap(?:er|est)?|lowest (?:points|miles|cost)|save (?:points|miles)|minimi[sz]e (?:points|miles|cost|fees)|value first)\b/i.test(notes);
   const experience = /\b(?:pay more|spend more|better experience|best experience|great seat|best seat|comfort(?:able)?|journey first)\b/i.test(notes);
   if (/\b(?:seat|cabin product|comfort|lie[- ]flat|suite)\b/i.test(notes)) priorities.push("cabin_product");
   if (/\b(?:schedule|departure|arrival|early flight|late arrival|overnight|red[- ]eye)\b/i.test(notes)) priorities.push("schedule");

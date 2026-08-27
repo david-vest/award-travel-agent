@@ -332,6 +332,7 @@ export async function rankRecommendations(state: AgentStateType): Promise<Partia
       overallScore: candidate.overallScore,
       assessmentConfidence: candidate.assessmentConfidence,
       evidenceIds,
+      qualitativeAssessments: assessment?.dimensions,
       badges: candidate.badges,
       tradeoff: tradeoffAgainst(candidate, cheapest),
       positioning: needsPositioning ? {
@@ -344,9 +345,25 @@ export async function rankRecommendations(state: AgentStateType): Promise<Partia
   });
 
   const order = new Map(recommendations.map((recommendation) => [recommendation.id, recommendation.rank]));
+  const sortedAwardResults = [...(state.awardResults ?? assessableOptions)].sort((a, b) =>
+    (order.get(optionId(a)) ?? Infinity) - (order.get(optionId(b)) ?? Infinity));
+  const sortedCandidateShortlist = [...assessableOptions].sort((a, b) =>
+    (order.get(optionId(a)) ?? Infinity) - (order.get(optionId(b)) ?? Infinity));
   return {
-    awardResults: [...(state.awardResults ?? assessableOptions)].sort((a, b) =>
-      (order.get(optionId(a)) ?? Infinity) - (order.get(optionId(b)) ?? Infinity)),
+    awardResults: sortedAwardResults,
+    candidateShortlist: sortedCandidateShortlist,
     recommendations,
+    recommendationSnapshot: recommendations.length > 0 ? {
+      awardResults: sortedAwardResults,
+      candidateShortlist: sortedCandidateShortlist,
+      tripSummaries: state.tripSummaries ?? [],
+      kbDocs: state.kbDocs ?? [],
+      optionEvidence: state.optionEvidence ?? {},
+      candidateAssessments: state.candidateAssessments ?? {},
+      recommendations,
+      recommendationPreferences: preferences,
+      searchStatus: state.searchStatus ?? "searched",
+      refreshedAt: state.refreshedAt ?? null,
+    } : null,
   };
 }

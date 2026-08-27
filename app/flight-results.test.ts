@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { FlightRecommendation } from "../src/contracts/travel-search";
-import { applyFlightControls, DEFAULT_FLIGHT_FILTERS } from "./flight-results";
+import {
+  applyFlightControls,
+  buildFlightComparisonRows,
+  DEFAULT_FLIGHT_FILTERS,
+  recommendationDeltas,
+} from "./flight-results";
 
 const flight = (over: Partial<FlightRecommendation>): FlightRecommendation => ({
   id: "a:business",
@@ -22,6 +27,32 @@ const flight = (over: Partial<FlightRecommendation>): FlightRecommendation => ({
   scoreFactors: [],
   confidence: "high",
   ...over,
+});
+
+describe("recommendation decision support", () => {
+  it("formats compact, factual tradeoff deltas against the cheapest option", () => {
+    expect(recommendationDeltas(flight({
+      tradeoff: {
+        comparedWithId: "cheap",
+        extraMiles: 17_500,
+        feeDifferenceUsd: 42,
+        durationSavedMinutes: 260,
+        stopsSaved: 1,
+      },
+    }))).toEqual(["+17.5k points", "+$42 fees", "4h 20m shorter", "1 fewer stop"]);
+  });
+
+  it("builds a comparison without mutating server recommendation ranks", () => {
+    const compared = [
+      flight({ id: "second", rank: 2, qualitativeAssessments: { cabin_product: { score: 88, rationale: "Direct aisle access.", evidenceIds: ["seat-doc"] } }, assessmentConfidence: "high", experienceScore: 84 }),
+      flight({ id: "first", rank: 1, miles: 75_000, assessmentConfidence: "low", evidenceIds: [], experienceScore: 72 }),
+    ];
+    const rows = buildFlightComparisonRows(compared);
+    expect(rows.find((row) => row.label === "Roam rank")?.values).toEqual(["#2", "#1"]);
+    expect(rows.find((row) => row.label === "Cabin product")?.values[0]).toContain("88/100");
+    expect(rows.find((row) => row.label === "Experience evidence")?.values[1]).toContain("Unknown");
+    expect(compared.map((option) => option.rank)).toEqual([2, 1]);
+  });
 });
 
 describe("applyFlightControls", () => {

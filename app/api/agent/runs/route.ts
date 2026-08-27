@@ -8,6 +8,7 @@ import {
   CANDIDATE_SHORTLIST_VERSION,
   EVIDENCE_RETRIEVAL_VERSION,
   EXPERIENCE_ASSESSMENT_VERSION,
+  PREFERENCE_RERANK_VERSION,
   PREFERENCE_INTERPRETER_VERSION,
   RECOMMENDATION_PIPELINE_VERSION,
   defaultRankingPreference,
@@ -85,6 +86,7 @@ export async function POST(request: Request) {
       let recommendations: FlightRecommendation[] = [];
       let answer = "";
       let searchExecuted = Boolean(body.request);
+      let rerankExecuted = false;
       const stageStartedAt = new Map<AgentStage, number>();
       const stageStatus = new Map<AgentStage, "active" | "complete">();
 
@@ -115,6 +117,7 @@ export async function POST(request: Request) {
             candidate_shortlist_version: CANDIDATE_SHORTLIST_VERSION,
             evidence_retrieval_version: EVIDENCE_RETRIEVAL_VERSION,
             experience_assessment_version: EXPERIENCE_ASSESSMENT_VERSION,
+            preference_rerank_version: PREFERENCE_RERANK_VERSION,
             credit_programs: body.request?.creditCardPrograms ?? [],
             award_programs: body.request?.awardPrograms ?? [],
             ...(rankingPreference ? {
@@ -197,7 +200,14 @@ export async function POST(request: Request) {
                 completeStage("rank", "Kept verified flight recommendations.");
               }
             }
-            if (Array.isArray(data.recommendations) && searchExecuted) {
+            if (node === "update_rerank_preferences") {
+              rerankExecuted = true;
+              completeStage("search", "Reused the existing verified availability; no provider search was run.");
+              completeStage("rules", "Reused cached itinerary details and qualitative evidence; no reassessment was needed.");
+              const preference = data.recommendationPreferences as { experienceWeight?: number } | undefined;
+              activateStage("rank", `Reranking the verified candidates at ${preference?.experienceWeight ?? 50}/100 toward journey experience.`);
+            }
+            if (Array.isArray(data.recommendations) && (searchExecuted || rerankExecuted)) {
               recommendations = data.recommendations as FlightRecommendation[];
               send({ type: "results", recommendations });
               if (node === "rank_recommendations") {
@@ -221,15 +231,15 @@ export async function POST(request: Request) {
               retryable: true,
             });
           } else {
-            if (searchExecuted && stageStatus.get("rank") !== "complete") {
+            if ((searchExecuted || rerankExecuted) && stageStatus.get("rank") !== "complete") {
               completeStage("rank", `Ranked ${recommendations.length.toLocaleString()} option${recommendations.length === 1 ? "" : "s"}.`);
-            } else if (!searchExecuted && stageStatus.get("rank") !== "complete") {
+            } else if (!searchExecuted && !rerankExecuted && stageStatus.get("rank") !== "complete") {
               completeStage("rank", "Kept verified flight recommendations.");
             }
             send({
               type: "complete",
               answer,
-              ...(searchExecuted ? { recommendations, searchRan: true } : { searchRan: false }),
+              ...((searchExecuted || rerankExecuted) ? { recommendations, searchRan: searchExecuted } : { searchRan: false }),
             });
           }
         }

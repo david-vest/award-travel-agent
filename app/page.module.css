@@ -224,6 +224,7 @@
 .sortControl select { flex: 1; min-width: 0; border: 0; outline: 0; appearance: none; background: transparent; color: var(--ink); font: inherit; font-weight: 650; cursor: pointer; }
 .resultsToolbar > button { padding: 0 10px; cursor: pointer; }
 .resultsToolbar > button:hover, .resultsToolbar .filtersActive { border-color: var(--green); background: var(--sage); color: var(--green); }
+.resultsToolbar > button:disabled { opacity: .45; cursor: not-allowed; }
 .resultsToolbar > button > span { min-width: 17px; height: 17px; padding: 0 4px; border-radius: 9px; background: var(--green); color: white; display: grid; place-items: center; font-size: 9px; }
 .resultsToolbar .clearResultsControls { border-color: transparent; background: transparent; color: var(--muted); }
 
@@ -233,8 +234,10 @@
 .flightCard { flex: 0 0 min(485px, 78%); min-height: 360px; padding: 20px; border: 1px solid var(--line-strong); border-radius: 8px; background: rgba(255,255,255,.33); scroll-snap-align: start; position: relative; opacity: .78; cursor: pointer; transition: opacity 150ms ease, background 150ms ease; }
 .flightCard:hover, .activeCard { opacity: 1; background: rgba(255,255,255,.58); }
 .roamPick { border: 2px solid var(--green); opacity: 1; }
-.pickBadge { position: absolute; top: 12px; left: 16px; padding: 5px 8px; border-radius: 5px; background: var(--green); color: white; display: flex; align-items: center; gap: 5px; font-size: 10px; font-weight: 650; }
-.flightTitle { margin-top: 18px; display: flex; justify-content: space-between; gap: 16px; }
+.cardBadges { min-height: 24px; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 5px; }
+.cardBadges span { min-height: 23px; padding: 4px 7px; border-radius: 5px; background: var(--sage); color: var(--green); display: inline-flex; align-items: center; gap: 4px; font-size: 9px; font-weight: 750; }
+.cardBadges .primaryBadge { background: var(--green); color: white; }
+.flightTitle { margin-top: 10px; display: flex; justify-content: space-between; gap: 16px; }
 .flightTitle h4 { font-family: var(--font-display); font-size: 20px; font-weight: 550; }
 .airlineIdentity { min-width: 0; display: flex; align-items: center; gap: 10px; }
 .airlineIdentity > div { min-width: 0; }
@@ -254,11 +257,19 @@
 .flightDetails strong { overflow: hidden; color: var(--ink); font-size: 11px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
 .schedule { margin-top: 9px; color: var(--muted); font-size: 11px; }
 .connectionInfo { display: block; margin-top: 5px; color: var(--green); font-weight: 650; }
+.tradeoffDeltas { margin-top: 11px; display: flex; flex-wrap: wrap; gap: 5px; }
+.tradeoffDeltas span { padding: 4px 7px; border: 1px solid #c7d7cb; border-radius: 20px; background: rgba(231,239,232,.55); color: var(--green); font-size: 9px; font-weight: 750; }
 .reason { margin-top: 14px; min-height: 55px; }
 .reason strong { color: var(--green); font-size: 11px; }
 .reason p { margin-top: 5px; color: #4d5852; font-size: 11px; line-height: 1.45; }
-.flightCard > button { min-width: 170px; min-height: 40px; margin-top: 9px; padding: 0 14px; border: 1px solid var(--green); border-radius: 5px; background: var(--green); color: white; display: flex; align-items: center; justify-content: center; gap: 12px; font: inherit; font-size: 11px; font-weight: 650; cursor: pointer; }
-.flightCard > button:hover { background: var(--green-deep); }
+.reason small { display: block; margin-top: 5px; color: #7a6550; font-size: 9px; line-height: 1.4; }
+.cardActions { margin-top: 10px; display: flex; gap: 7px; }
+.cardActions button { min-height: 40px; padding: 0 13px; border: 1px solid var(--green); border-radius: 5px; display: flex; align-items: center; justify-content: center; gap: 7px; font: inherit; font-size: 11px; font-weight: 650; cursor: pointer; }
+.cardActions .compareToggle { flex: 0 0 auto; background: transparent; color: var(--green); }
+.cardActions .compareToggle[aria-pressed="true"] { background: var(--sage); }
+.cardActions .compareToggle:disabled { opacity: .42; cursor: not-allowed; }
+.cardActions .reviewButton { flex: 1; background: var(--green); color: white; }
+.cardActions .reviewButton:hover { background: var(--green-deep); }
 .scrollTrack { width: 42%; height: 4px; margin: 10px auto 0; border-radius: 8px; background: #dedfd9; overflow: hidden; }
 .scrollTrack span { display: block; height: 100%; border-radius: inherit; background: var(--green); transition: transform 180ms ease; }
 .scrollHint { margin-top: 8px; color: #818984; font-size: 10px; text-align: center; }
@@ -312,6 +323,18 @@
 .bookingCaution { margin-top: 16px; color: var(--muted); font-size: 10px; line-height: 1.5; }
 .itineraryActions { margin-top: 18px; padding-top: 15px; border-top: 1px solid var(--line); display: flex; justify-content: flex-end; gap: 9px; }.itineraryActions button, .itineraryActions a { min-height: 42px; padding: 0 15px; border: 1px solid var(--line-strong); border-radius: 6px; background: transparent; color: var(--green); display: inline-flex; align-items: center; justify-content: center; gap: 8px; font: inherit; font-size: 11px; font-weight: 700; text-decoration: none; cursor: pointer; }.itineraryActions a { border-color: var(--green); background: var(--green); color: white; }.itineraryActions a:hover { background: var(--green-deep); }
 .resultsFilterModal { width: min(610px, 100%); max-height: min(780px, calc(100vh - 48px)); overflow-y: auto; }
+.comparisonModal { width: min(980px, 100%); max-height: min(820px, calc(100vh - 48px)); overflow-y: auto; }
+.comparisonIntro { margin-top: 6px; color: var(--muted); font-size: 11px; }
+.comparisonTableWrap { margin-top: 18px; overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }
+.comparisonTable { width: 100%; min-width: 680px; border-collapse: collapse; table-layout: fixed; }
+.comparisonTable th, .comparisonTable td { padding: 10px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); color: #445149; font-size: 10px; line-height: 1.45; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+.comparisonTable tr:last-child th, .comparisonTable tr:last-child td { border-bottom: 0; }
+.comparisonTable th:last-child, .comparisonTable td:last-child { border-right: 0; }
+.comparisonTable thead th { background: var(--paper-deep); color: var(--ink); }
+.comparisonTable thead th:first-child, .comparisonTable tbody th { width: 145px; }
+.comparisonTable thead strong, .comparisonTable thead span { display: block; }
+.comparisonTable thead span { margin-top: 3px; color: var(--muted); font-weight: 500; }
+.comparisonTable tbody th { color: var(--green); font-weight: 750; }
 .filterModalIntro { margin-top: 6px; max-width: 470px; color: var(--muted); font-size: 11px; line-height: 1.45; }
 .filterModalSection { margin-top: 20px; display: grid; gap: 8px; }
 .filterModalSection > strong { font-size: 11px; }

@@ -9,7 +9,7 @@ export function routeAfterGuard(state: AgentStateType): "triage" | "resolve_ui_l
 
 export function routeAfterTriage(
   state: AgentStateType,
-): "plan_search" | "plan_discovery" | "retrieve_knowledge" {
+): "plan_search" | "plan_discovery" | "retrieve_knowledge" | "update_rerank_preferences" {
   switch (state.intent) {
     case "route_search":
       return "plan_search";
@@ -17,6 +17,8 @@ export function routeAfterTriage(
       return "plan_discovery";
     case "knowledge":
       return "retrieve_knowledge";
+    case "rerank":
+      return "update_rerank_preferences";
     default:
       // Unexpected intent: answer from knowledge rather than crashing the turn.
       return "retrieve_knowledge";

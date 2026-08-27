@@ -111,6 +111,11 @@ export type FlightRecommendation = {
   overallScore?: number;
   assessmentConfidence?: RecommendationConfidence;
   evidenceIds?: string[];
+  qualitativeAssessments?: Partial<Record<"cabin_product" | "booking_ease" | "transfer_risk" | "connection_quality", {
+    score: number;
+    rationale: string;
+    evidenceIds: string[];
+  }>>;
   badges?: RecommendationBadge[];
   tradeoff?: {
     comparedWithId: string;

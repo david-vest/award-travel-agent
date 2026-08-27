@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { parseLastSearchSnapshot, type LastSearchSnapshot } from "./last-search";
+import {
+  parseLastSearchSnapshot,
+  validateLastSearchSnapshot,
+  type LastSearchSnapshot,
+} from "./last-search";
 
 const snapshot: LastSearchSnapshot = {
   version: 1,
@@ -104,5 +108,25 @@ describe("parseLastSearchSnapshot", () => {
       ...snapshot,
       form: { ...snapshot.form, rankingPreference: { experienceWeight: 50, priorities: ["unknown"] } },
     }))).toBeNull();
+  });
+
+  it("reports the exact invalid field for debugging", () => {
+    const invalid = {
+      ...snapshot,
+      run: {
+        ...snapshot.run,
+        recommendations: [{
+          ...snapshot.run!.recommendations[0],
+          taxes: { amount: "free", currency: "USD" },
+        }],
+      },
+    };
+
+    const result = validateLastSearchSnapshot(invalid);
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0]?.path).toEqual(["run", "recommendations", 0, "taxes", "amount"]);
+    }
   });
 });

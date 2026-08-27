@@ -118,6 +118,7 @@ flowchart TD
   
   RAG["retrieve_knowledge<br/><i>(Atlas Vector Search)</i>"]:::ragNode
   Assess["assess_candidate_experience<br/><i>(Evidence-Bounded Qualitative Judge)</i>"]:::llmNode
+  Rerank["update_rerank_preferences<br/><i>(Checkpoint Reuse)</i>"]:::llmNode
   Rank["rank_recommendations<br/><i>(Deterministic Hybrid Ranker)</i>"]:::detNode
   Synthesize["synthesize<br/><i>(Context-Grounded Writer)</i>"]:::llmNode
   Verify["verify_groundedness<br/><i>(Regex Fact Set-Membership)</i>"]:::guardNode
@@ -137,6 +138,7 @@ flowchart TD
   Triage -.->|"intent == 'route_search'"| PlanSearch
   Triage -.->|"intent == 'discovery'"| PlanDisc
   Triage -.->|"intent == 'knowledge'"| RAG
+  Triage -.->|"intent == 'rerank'"| Rerank
   
   ResolveUI --> PrepareUI
   PrepareUI --> Preferences
@@ -155,6 +157,7 @@ flowchart TD
   
   RAG --> Assess
   Assess --> Rank
+  Rerank --> Rank
   Rank --> Synthesize
   Synthesize --> Verify
   
@@ -186,7 +189,7 @@ flowchart TD
 | **Frontend Runtime** | **React 19.2.8** | State hooks, responsive CSS modules, dynamic comparison rail, SSE event listener | `app/page.tsx`, `app/useAgentRun.ts` |
 | **Styling & Typography** | **CSS Modules + Fontsource** | Bespoke dark/light themes, Manrope (sans) and Newsreader (editorial serif) | `app/page.module.css`, `app/globals.css` |
 | **Icons & Visuals** | **Phosphor Icons React** | Accessible, consistent iconography for cabins, airlines, transfers, and controls | `app/AirlineLogo.tsx`, `app/page.tsx` |
-| **Agent State Machine** | **@langchain/langgraph 1.4.9** | 20-node cyclic execution graph with conditional branching and checkpointing | `src/agent/graph.ts`, `src/agent/state.ts` |
+| **Agent State Machine** | **@langchain/langgraph 1.4.9** | 21-node cyclic execution graph with conditional branching, checkpoint reuse, and grounded retries | `src/agent/graph.ts`, `src/agent/state.ts` |
 | **LLM Orchestration** | **@langchain/anthropic 1.5.4** | Claude 3.5 Sonnet integration with ephemeral prompt caching (`cache_control`) | `src/agent/models.ts`, `src/agent/cache.ts` |
 | **Vector Search & DB** | **MongoDB Atlas & MongoDB Node SDK 6.21** | Vector search index for knowledge retrieval & conversation checkpointer (`MongoDBSaver`) | `src/rag/store.ts`, `src/rag/retriever.ts` |
 | **Vector Embeddings** | **Voyage AI (`voyage-3-lite`)** | High-dimensional dense embeddings for award rules, reviews, and transfer policies | `src/rag/store.ts`, `src/rag/ingest.ts` |

@@ -29,7 +29,17 @@ import {
   type StoredSearchForm,
 } from "../src/local/last-search";
 import { AirlineLogo } from "./AirlineLogo";
-import { activeFlightFilterCount, applyFlightControls, DEFAULT_FLIGHT_FILTERS, FLIGHT_SORT_OPTIONS, type FlightResultFilters, type FlightSort } from "./flight-results";
+import {
+  activeFlightFilterCount,
+  applyFlightControls,
+  buildFlightComparisonRows,
+  DEFAULT_FLIGHT_FILTERS,
+  FLIGHT_SORT_OPTIONS,
+  recommendationDeltas,
+  RECOMMENDATION_BADGE_LABELS,
+  type FlightResultFilters,
+  type FlightSort,
+} from "./flight-results";
 import { useAgentRun } from "./useAgentRun";
 import { formatSchedule } from "../src/ui/flight-times";
 import { bookingProgramName, bookingUrlForFlight } from "../src/booking-links";
@@ -43,8 +53,8 @@ const CLEARED_LAST_SEARCH_STORAGE_KEY = "roam:last-search:cleared:v1";
 
 const researchSteps = [
   { title: "Search live award space", evidence: "Seats.aero availability" },
-  { title: "Verify itinerary and program context", evidence: "Flight details + retrieved rules" },
-  { title: "Rank by total value", evidence: "Deterministic value model" },
+  { title: "Verify itinerary and experience evidence", evidence: "Flight details + option-linked sources" },
+  { title: "Blend value and journey quality", evidence: "Deterministic hybrid rank" },
 ];
 
 const originInitial: LocationOption = { kind: "airport", code: "SFO", city: "San Francisco", country: "United States", airports: ["SFO"] };
@@ -91,6 +101,8 @@ export default function Home() {
   const [activeFlight, setActiveFlight] = useState(0);
   const [bookingOpen, setBookingOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [comparisonOpen, setComparisonOpen] = useState(false);
+  const [compareIds, setCompareIds] = useState<string[]>([]);
   const [flightSort, setFlightSort] = useState<FlightSort>("recommended");
   const [resultFilters, setResultFilters] = useState<FlightResultFilters>(DEFAULT_FLIGHT_FILTERS);
   const railRef = useRef<HTMLDivElement>(null);
@@ -106,6 +118,10 @@ export default function Home() {
   const filterCount = activeFlightFilterCount(resultFilters);
   const availableCabins = useMemo(() => [...new Set(allFlights.map((flight) => flight.cabin))], [allFlights]);
   const availablePrograms = useMemo(() => [...new Map(allFlights.map((flight) => [flight.program.id, flight.program])).values()], [allFlights]);
+  const comparisonFlights = useMemo(() => compareIds.flatMap((id) => {
+    const flight = allFlights.find((candidate) => candidate.id === id);
+    return flight ? [flight] : [];
+  }), [allFlights, compareIds]);
   const running = agentRun.status === "running";
   const canSearch = origin !== null && destinations.length > 0 && Boolean(startDate && endDate) && cabins.length > 0;
   const analysisPending = running && !agentRun.answer;
@@ -138,6 +154,8 @@ export default function Home() {
     setActiveFlight(0);
     setBookingOpen(false);
     setFiltersOpen(false);
+    setComparisonOpen(false);
+    setCompareIds([]);
     setFlightSort("recommended");
     setResultFilters(DEFAULT_FLIGHT_FILTERS);
     setFollowUp("");
@@ -224,6 +242,8 @@ export default function Home() {
     };
     lastSubmittedFormRef.current = form;
     setChatMessages([]);
+    setCompareIds([]);
+    setComparisonOpen(false);
     writeLastSearch({ version: 1, savedAt: new Date().toISOString(), form, run: null, chatMessages: [] });
     const request: TripRequest = {
       origin: { code: origin.code, airports: origin.airports, custom: origin.kind === "custom" },
@@ -431,11 +451,15 @@ export default function Home() {
             {allFlights.length > 0 && <div className={styles.resultsToolbar}>
               <label className={styles.sortControl}><ArrowsDownUp size={15} /><span>Sort</span><select value={flightSort} onChange={(event) => { setFlightSort(event.target.value as FlightSort); setActiveFlight(0); railRef.current?.scrollTo({ left: 0 }); }}>{FLIGHT_SORT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select><CaretDown size={12} weight="bold" /></label>
               <button className={filterCount ? styles.filtersActive : ""} onClick={() => setFiltersOpen(true)}><Funnel size={15} weight={filterCount ? "fill" : "regular"} />Filters{filterCount > 0 && <span>{filterCount}</span>}</button>
+              <button disabled={comparisonFlights.length < 2} onClick={() => setComparisonOpen(true)} aria-label={`Compare selected flights, ${comparisonFlights.length} selected`}><ArrowsDownUp size={15} />Compare{comparisonFlights.length > 0 && <span>{comparisonFlights.length}</span>}</button>
               {(filterCount > 0 || flightSort !== "recommended") && <button className={styles.clearResultsControls} onClick={() => { changeResultFilters(DEFAULT_FLIGHT_FILTERS); setFlightSort("recommended"); }}>Reset</button>}
             </div>}
             <div className={styles.flightRail} ref={railRef} onScroll={syncCarousel} tabIndex={0} aria-label="All verified flight options">
-              {flights.map((flight, index) => <article className={`${styles.flightCard} ${flight.rank === 1 ? styles.roamPick : ""} ${index === activeFlightIndex ? styles.activeCard : ""}`} key={`${flight.id}-${flight.cabin}`} onClick={() => moveCarousel(index)}>
-                {flight.rank === 1 && <span className={styles.pickBadge}><Star size={12} weight="fill" /> Roam&apos;s pick</span>}
+              {flights.map((flight, index) => {
+                const selectedForComparison = compareIds.includes(flight.id);
+                const deltas = recommendationDeltas(flight);
+                return <article className={`${styles.flightCard} ${flight.rank === 1 ? styles.roamPick : ""} ${index === activeFlightIndex ? styles.activeCard : ""}`} key={`${flight.id}-${flight.cabin}`} onClick={() => moveCarousel(index)}>
+                <div className={styles.cardBadges}>{(flight.badges ?? []).map((badge) => <span className={badge === "best_overall" ? styles.primaryBadge : ""} key={badge}>{badge === "best_overall" && <Star size={11} weight="fill" />}{RECOMMENDATION_BADGE_LABELS[badge]}</span>)}</div>
                 <div className={styles.flightTitle}>
                   <div className={styles.airlineIdentity}><AirlineLogo code={flight.carriers[0] ?? "?"} name={flight.carriers[0] ?? "Airline"} size={38} /><div><h4>{flight.carriers[0] ?? "Award flight"} {formatCabin(flight.cabin)}</h4><strong>{flight.origin} → {flight.destination}</strong></div></div>
                   <div className={styles.price}><strong>{flight.miles.toLocaleString()} points {flight.taxes ? `+ ${formatTaxes(flight.taxes.amount, flight.taxes.currency)}` : ""}</strong><span>via {flight.program.label}</span></div>
@@ -449,12 +473,16 @@ export default function Home() {
                   <div><small>Stops</small><strong>{flight.direct ? "Nonstop" : flight.stops != null ? `${flight.stops} stop${flight.stops === 1 ? "" : "s"}` : "Connection"}</strong></div>
                 </div>
                 <div className={styles.schedule}>{travelers} · {flight.remainingSeats ? `${flight.remainingSeats} seats available` : "Seat count to confirm"}{flight.connections?.length ? <span className={styles.connectionInfo}>Connect in {formatConnections(flight.connections)}</span> : null}</div>
-                <div className={styles.reason}><strong>{flight.rank === 1 ? "Why it leads" : "Why it works"}</strong><p>{flight.reason}</p></div>
-                <button onClick={(event) => { event.stopPropagation(); setActiveFlight(index); setBookingOpen(true); }}>Review itinerary <ArrowRight size={18} weight="bold" /></button>
-              </article>)}
+                {deltas.length > 0 && <div className={styles.tradeoffDeltas} aria-label="Compared with the lowest-cost eligible option">{deltas.map((delta) => <span key={delta}>{delta}</span>)}</div>}
+                <div className={styles.reason}><strong>Decision tradeoff</strong><p>{flight.reason}</p>{flight.assessmentConfidence === "low" && !(flight.evidenceIds?.length) && <small>Experience evidence unavailable; journey score uses objective flight facts.</small>}</div>
+                <div className={styles.cardActions}>
+                  <button className={styles.compareToggle} aria-pressed={selectedForComparison} disabled={!selectedForComparison && compareIds.length >= 3} onClick={(event) => { event.stopPropagation(); setCompareIds((current) => selectedForComparison ? current.filter((id) => id !== flight.id) : [...current, flight.id].slice(0, 3)); }}>{selectedForComparison ? <Check size={15} weight="bold" /> : <Plus size={15} />} {selectedForComparison ? "Selected" : "Compare"}</button>
+                  <button className={styles.reviewButton} onClick={(event) => { event.stopPropagation(); setActiveFlight(index); setBookingOpen(true); }}>Review itinerary <ArrowRight size={18} weight="bold" /></button>
+                </div>
+              </article>;})}
               {!flights.length && <div className={styles.emptyResults}>{agentRun.error ? agentRun.error : running ? "Roam is checking live award availability…" : allFlights.length ? "No flights match these result filters. Clear or widen a filter to see more options." : "Your ranked, grounded recommendations will appear here."}</div>}
             </div>
-            {flights.length > 0 && <><div className={styles.scrollTrack}><span style={{ width: `${100 / flights.length}%`, transform: `translateX(${activeFlightIndex * 100}%)` }} /></div><p className={styles.scrollHint}>Best match first · scroll to compare every verified option.</p></>}
+            {flights.length > 0 && <><div className={styles.scrollTrack}><span style={{ width: `${100 / flights.length}%`, transform: `translateX(${activeFlightIndex * 100}%)` }} /></div><p className={styles.scrollHint}>Scroll through verified options · select 2–3 to compare side by side.</p></>}
             {(chatMessages.length > 0 || analysisPending || agentRun.answer) && <div className={styles.chatThread} aria-label="Follow-up conversation">
               {chatMessages.map((message) => message.role === "user"
                 ? <div className={styles.userMessage} key={message.id}><div className={styles.userMessageLabel}>You</div><p>{message.content}</p></div>
@@ -469,6 +497,7 @@ export default function Home() {
 
       {bookingOpen && flights[activeFlightIndex] && <BookingModal flight={flights[activeFlightIndex]} travelers={travelerCount} onClose={() => setBookingOpen(false)} />}
       {filtersOpen && <FlightFiltersModal filters={resultFilters} availableCabins={availableCabins} availablePrograms={availablePrograms} resultCount={flights.length} onChange={changeResultFilters} onClose={() => setFiltersOpen(false)} />}
+      {comparisonOpen && comparisonFlights.length >= 2 && <FlightComparisonModal flights={comparisonFlights} onClose={() => setComparisonOpen(false)} />}
     </div>
   );
 }
@@ -624,6 +653,31 @@ function PointsPicker({ value, selectedCards, selectedPrograms, cardBalances, pr
       })}</div>
       <p className={styles.balanceHelp}>When any balance is entered, blank balances count as zero. Roam combines eligible card and airline balances at a nominal 1:1 transfer ratio and does not assume transfer bonuses.</p>
     </div>}
+  </div>;
+}
+
+function FlightComparisonModal({ flights, onClose }: { flights: FlightRecommendation[]; onClose: () => void }) {
+  const rows = buildFlightComparisonRows(flights);
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [onClose]);
+
+  return <div className={styles.modalBackdrop} onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <section className={`${styles.modal} ${styles.comparisonModal}`} role="dialog" aria-modal="true" aria-labelledby="comparison-modal-title">
+      <button className={styles.modalClose} onClick={onClose} aria-label="Close flight comparison"><X size={18} /></button>
+      <p className={styles.modalEyebrow}>Side-by-side decision support</p>
+      <h2 id="comparison-modal-title">Compare verified options</h2>
+      <p className={styles.comparisonIntro}>Roam&apos;s original ranks stay fixed here—even if you sorted the results rail another way.</p>
+      <div className={styles.comparisonTableWrap}>
+        <table className={styles.comparisonTable}>
+          <thead><tr><th scope="col">Measure</th>{flights.map((flight) => <th scope="col" key={flight.id}><strong>{flight.carriers[0] ?? "Flight"}</strong><span>{flight.origin} → {flight.destination}</span></th>)}</tr></thead>
+          <tbody>{rows.map((row) => <tr key={row.label}><th scope="row">{row.label}</th>{row.values.map((value, index) => <td key={`${row.label}-${flights[index].id}`}>{value}</td>)}</tr>)}</tbody>
+        </table>
+      </div>
+      <div className={styles.itineraryActions}><button onClick={onClose}>Keep comparing</button></div>
+    </section>
   </div>;
 }
 

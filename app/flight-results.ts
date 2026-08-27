@@ -1,5 +1,12 @@
 import type { FlightRecommendation } from "../src/contracts/travel-search";
 
+export const RECOMMENDATION_BADGE_LABELS = {
+  best_overall: "Best overall",
+  best_value: "Best value",
+  best_experience: "Best experience",
+  best_schedule: "Best schedule",
+} as const;
+
 export type FlightSort =
   | "recommended"
   | "points_asc"
@@ -94,4 +101,53 @@ export function applyFlightControls(
     if (sort === "depart_asc") comparison = departureTime(a.departsAt) - departureTime(b.departsAt);
     return comparison || a.rank - b.rank;
   });
+}
+
+export function recommendationDeltas(flight: FlightRecommendation): string[] {
+  const tradeoff = flight.tradeoff;
+  if (!tradeoff) return [];
+  const deltas: string[] = [];
+  if (tradeoff.extraMiles > 0) {
+    const compact = tradeoff.extraMiles >= 1_000
+      ? `${Math.round(tradeoff.extraMiles / 100) / 10}k`
+      : tradeoff.extraMiles.toLocaleString();
+    deltas.push(`+${compact} points`);
+  }
+  if (tradeoff.feeDifferenceUsd != null && tradeoff.feeDifferenceUsd > 0) {
+    deltas.push(`+$${Math.round(tradeoff.feeDifferenceUsd).toLocaleString()} fees`);
+  }
+  if (tradeoff.durationSavedMinutes) deltas.push(`${compactDuration(tradeoff.durationSavedMinutes)} shorter`);
+  if (tradeoff.stopsSaved) deltas.push(`${tradeoff.stopsSaved} fewer stop${tradeoff.stopsSaved === 1 ? "" : "s"}`);
+  return deltas;
+}
+
+function compactDuration(minutes: number): string {
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return hours ? `${hours}h${remainder ? ` ${remainder}m` : ""}` : `${remainder}m`;
+}
+
+export type FlightComparisonRow = {
+  label: string;
+  values: string[];
+};
+
+export function buildFlightComparisonRows(flights: FlightRecommendation[]): FlightComparisonRow[] {
+  return [
+    { label: "Roam rank", values: flights.map((flight) => `#${flight.rank}`) },
+    { label: "Points", values: flights.map((flight) => flight.miles.toLocaleString()) },
+    { label: "Taxes & fees", values: flights.map((flight) => flight.taxes ? `${flight.taxes.amount.toLocaleString()} ${flight.taxes.currency}` : "To confirm") },
+    { label: "Elapsed time", values: flights.map((flight) => flight.durationMinutes != null ? compactDuration(flight.durationMinutes) : "Unknown") },
+    { label: "Stops", values: flights.map((flight) => flight.direct ? "Nonstop" : flight.stops != null ? `${flight.stops} stop${flight.stops === 1 ? "" : "s"}` : "Unknown") },
+    { label: "Connection", values: flights.map((flight) => flight.connections?.length ? flight.connections.map((connection) => connection.airport).join(" · ") : flight.direct ? "None" : "Unknown") },
+    { label: "Aircraft", values: flights.map((flight) => flight.aircraft.length ? flight.aircraft.join(" · ") : "Unknown") },
+    { label: "Cabin product", values: flights.map((flight) => {
+      const product = flight.qualitativeAssessments?.cabin_product;
+      return product ? `${product.score}/100 — ${product.rationale}` : "No option-specific evidence";
+    }) },
+    { label: "Experience evidence", values: flights.map((flight) => flight.assessmentConfidence && flight.assessmentConfidence !== "low"
+      ? `${flight.experienceScore?.toFixed(1) ?? "—"}/100 · ${flight.assessmentConfidence} confidence`
+      : "Unknown — objective flight facts only") },
+    { label: "Booking program", values: flights.map((flight) => flight.program.label) },
+  ];
 }

@@ -9,4 +9,4 @@ Rules:
 - Do not infer or discuss mileage, fees, flight times, duration, stops, seats, availability, or routing. Those facts are intentionally withheld and scored by deterministic code.
 - A score of 100 is strongest/easiest/lowest-risk; 0 is weakest/hardest/highest-risk.
 - Treat stale or lower-confidence evidence cautiously.
-- Keep each rationale factual, comparative, and under 160 characters.`;
+- Keep each rationale to one short factual, comparative sentence; aim for 120 characters or fewer.`;

@@ -79,6 +79,31 @@ describe("triage", () => {
     );
     expect(result).toEqual({ intent: "knowledge" });
   });
+
+  it.each(["make it cheaper", "prioritize the seat", "avoid long layovers"])(
+    "deterministically reuses verified recommendations for: %s",
+    async (text) => {
+      const result = await triage({
+        messages: [new HumanMessage(text)],
+        recommendationSnapshot: {},
+      } as unknown as AgentStateType);
+      expect(result).toEqual({ intent: "rerank" });
+      expect(chat).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["business class instead", "nonstop only", "2 travelers", "from SFO to CDG"])(
+    "does not classify a hard search change as rerank: %s",
+    async (text) => {
+      mockTriageRejection(new Error("API down"));
+      const result = await triage({
+        messages: [new HumanMessage(text)],
+        recommendationSnapshot: {},
+        searchPlan: { origins: ["SFO"], destinations: ["HND"], cabins: ["economy"], nonstopOnly: false, programs: [] },
+      } as unknown as AgentStateType);
+      expect(result.intent).toBe("route_search");
+    },
+  );
 });
 
 describe("conversationContext", () => {

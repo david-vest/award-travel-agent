@@ -20,6 +20,7 @@ graph TD;
 	enrich_trips(enrich_trips)
 	retrieve_knowledge(retrieve_knowledge)
 	assess_candidate_experience(assess_candidate_experience)
+	update_rerank_preferences(update_rerank_preferences)
 	rank_recommendations(rank_recommendations)
 	synthesize(synthesize)
 	refresh_availability(refresh_availability)
@@ -43,12 +44,14 @@ graph TD;
 	retrieve_knowledge --> assess_candidate_experience;
 	search_positioning --> build_candidate_shortlist;
 	synthesize --> verify_groundedness;
+	update_rerank_preferences --> rank_recommendations;
 	guard_input -.-> triage;
 	guard_input -.-> resolve_ui_locations;
 	guard_input -.-> refuse;
 	triage -.-> plan_search;
 	triage -.-> plan_discovery;
 	triage -.-> retrieve_knowledge;
+	triage -.-> update_rerank_preferences;
 	search_awards -.-> refresh_availability;
 	search_awards -.-> build_candidate_shortlist;
 	enrich_trips -.-> search_positioning;

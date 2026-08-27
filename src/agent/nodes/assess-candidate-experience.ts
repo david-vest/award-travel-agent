@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { BaseLanguageModelInput } from "@langchain/core/language_models/base";
 import { plainSystem } from "../cache";
 import { chat } from "../models";
 import { ASSESS_CANDIDATES_PROMPT } from "../prompts/assess-candidates";
@@ -10,21 +11,27 @@ import type {
   CandidateAssessments,
 } from "../../domain/candidate-assessment";
 
+export const CANDIDATE_ASSESSMENT_BATCH_SIZE = 5;
+export const CANDIDATE_ASSESSMENT_CONCURRENCY = 2;
+export const CANDIDATE_RATIONALE_MAX_CHARS = 160;
+
 const dimensionAssessmentSchema = z.object({
   dimension: z.enum(SCORING_DIMENSIONS),
   score: z.number().int().min(0).max(100),
   evidenceIds: z.array(z.string().min(1)).min(1).max(4),
-  rationale: z.string().trim().min(1).max(160),
+  rationale: z.string().trim().min(1),
 });
 
 export const candidateAssessmentOutputSchema = z.object({
   assessments: z.array(z.object({
     optionId: z.string().min(1),
     dimensions: z.array(dimensionAssessmentSchema).min(1).max(SCORING_DIMENSIONS.length),
-  })).max(20),
+  })).max(CANDIDATE_ASSESSMENT_BATCH_SIZE),
 });
 
 type RawAssessments = z.infer<typeof candidateAssessmentOutputSchema>;
+
+const confidenceOrder = { high: 0, medium: 1, low: 2 } as const;
 
 function fallbackAssessment(id: string): CandidateAssessment {
   return { optionId: id, dimensions: {}, confidence: "low" };
@@ -34,6 +41,47 @@ function evidenceConfidence(evidence: RetrievedDoc[]): CandidateAssessment["conf
   if (evidence.some((doc) => doc.match?.confidence === "high")) return "high";
   if (evidence.some((doc) => doc.match?.confidence === "medium")) return "medium";
   return "low";
+}
+
+function normalizeRationale(rationale: string): string {
+  const trimmed = rationale.trim();
+  if (trimmed.length <= CANDIDATE_RATIONALE_MAX_CHARS) return trimmed;
+
+  const available = trimmed.slice(0, CANDIDATE_RATIONALE_MAX_CHARS - 1);
+  const lastWordBoundary = available.lastIndexOf(" ");
+  const cutoff = lastWordBoundary >= CANDIDATE_RATIONALE_MAX_CHARS * 0.75
+    ? lastWordBoundary
+    : available.length;
+  return `${available.slice(0, cutoff).replace(/[,:;\s]+$/u, "")}…`;
+}
+
+function evidenceStrength(a: RetrievedDoc, b: RetrievedDoc): number {
+  const aConfidence = a.match?.confidence ?? "low";
+  const bConfidence = b.match?.confidence ?? "low";
+  const aUpdated = Date.parse(a.updated);
+  const bUpdated = Date.parse(b.updated);
+  return confidenceOrder[aConfidence] - confidenceOrder[bConfidence]
+    || Number(Boolean(a.match?.stale)) - Number(Boolean(b.match?.stale))
+    || Number(Boolean(a.match?.semanticSupplement)) - Number(Boolean(b.match?.semanticSupplement))
+    || (Number.isFinite(bUpdated) ? bUpdated : 0) - (Number.isFinite(aUpdated) ? aUpdated : 0)
+    || a.id.localeCompare(b.id);
+}
+
+/** Keeps one strongest applicable document per dimension, deduplicating documents selected more than once. */
+export function strongestEvidencePerDimension(evidence: RetrievedDoc[]): RetrievedDoc[] {
+  const selected = new Map<string, { doc: RetrievedDoc; dimensions: Set<ScoringDimension> }>();
+  for (const dimension of SCORING_DIMENSIONS) {
+    const strongest = evidence
+      .filter((doc) => (doc.dimensions ?? []).includes(dimension))
+      .sort(evidenceStrength)[0];
+    if (!strongest) continue;
+    const current = selected.get(strongest.id) ?? { doc: strongest, dimensions: new Set<ScoringDimension>() };
+    current.dimensions.add(dimension);
+    selected.set(strongest.id, current);
+  }
+  return [...selected.values()]
+    .sort((a, b) => evidenceStrength(a.doc, b.doc))
+    .map(({ doc, dimensions }) => ({ ...doc, dimensions: [...dimensions] }));
 }
 
 /** Rejects partial, duplicated, or cross-option citations before ranking sees them. */
@@ -65,7 +113,7 @@ export function validateCandidateAssessments(
       dimensions[item.dimension] = {
         score: item.score,
         evidenceIds: [...new Set(item.evidenceIds)],
-        rationale: item.rationale,
+        rationale: normalizeRationale(item.rationale),
       };
     }
     return [assessment.optionId, {
@@ -91,10 +139,31 @@ function assessmentInput(evidenceByOption: Record<string, RetrievedDoc[]>): stri
           reviewAfter: doc.reviewAfter,
           matchConfidence: doc.match?.confidence ?? "low",
           matchReasons: doc.match?.reasons ?? [],
-          sources: doc.sources,
         })),
       })),
   });
+}
+
+function assessmentBatches(
+  evidenceByOption: Record<string, RetrievedDoc[]>,
+): Array<Record<string, RetrievedDoc[]>> {
+  const entries = Object.entries(evidenceByOption).filter(([, docs]) => docs.length > 0);
+  const batches: Array<Record<string, RetrievedDoc[]>> = [];
+  for (let index = 0; index < entries.length; index += CANDIDATE_ASSESSMENT_BATCH_SIZE) {
+    batches.push(Object.fromEntries(entries.slice(index, index + CANDIDATE_ASSESSMENT_BATCH_SIZE)));
+  }
+  return batches;
+}
+
+async function assessBatch(
+  model: { invoke: (messages: BaseLanguageModelInput) => Promise<unknown> },
+  evidenceByOption: Record<string, RetrievedDoc[]>,
+): Promise<CandidateAssessments> {
+  const raw = candidateAssessmentOutputSchema.parse(await model.invoke([
+    plainSystem(ASSESS_CANDIDATES_PROMPT),
+    { role: "user", content: assessmentInput(evidenceByOption) },
+  ]));
+  return validateCandidateAssessments(raw, evidenceByOption);
 }
 
 export async function assessCandidateExperience(
@@ -105,7 +174,7 @@ export async function assessCandidateExperience(
     : state.candidateShortlist;
   const evidenceByOption = Object.fromEntries(options.map((option) => {
     const id = optionId(option);
-    return [id, state.optionEvidence?.[id] ?? []];
+    return [id, strongestEvidencePerDimension(state.optionEvidence?.[id] ?? [])];
   }));
   const candidatesWithEvidence = options.filter((option) =>
     (evidenceByOption[optionId(option)]?.length ?? 0) > 0);
@@ -122,20 +191,31 @@ export async function assessCandidateExperience(
       maxTokens: 2_500,
       disableThinking: true,
     }).withStructuredOutput(candidateAssessmentOutputSchema, { name: "candidate_experience_assessments" });
-    const raw = candidateAssessmentOutputSchema.parse(await model.invoke([
-      plainSystem(ASSESS_CANDIDATES_PROMPT),
-      { role: "user", content: assessmentInput(evidenceByOption) },
-    ]));
+    const batches = assessmentBatches(evidenceByOption);
+    const batchResults: Array<PromiseSettledResult<CandidateAssessments>> = [];
+    for (let index = 0; index < batches.length; index += CANDIDATE_ASSESSMENT_CONCURRENCY) {
+      batchResults.push(...await Promise.allSettled(
+        batches
+          .slice(index, index + CANDIDATE_ASSESSMENT_CONCURRENCY)
+          .map((batch) => assessBatch(model, batch)),
+      ));
+    }
+    const successful = batchResults.flatMap((result) =>
+      result.status === "fulfilled" ? Object.entries(result.value) : []);
+    const failed = batchResults.some((result) => result.status === "rejected");
     return {
       candidateAssessments: {
         ...fallbacks,
-        ...validateCandidateAssessments(raw, evidenceByOption),
+        ...Object.fromEntries(successful),
       },
+      ...(failed ? {
+        degradedReasons: [...new Set([...(state.degradedReasons ?? []), "candidate_assessment_failed"])],
+      } : {}),
     };
   } catch {
     return {
       candidateAssessments: fallbacks,
-      degradedReasons: [...(state.degradedReasons ?? []), "candidate_assessment_failed"],
+      degradedReasons: [...new Set([...(state.degradedReasons ?? []), "candidate_assessment_failed"])],
     };
   }
 }

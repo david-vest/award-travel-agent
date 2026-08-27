@@ -18,6 +18,18 @@ no availability lookup.
   "does Lufthansa charge fuel surcharges?"
   "is ANA business class any good?"
 
+rerank — the user changes only a soft ranking preference and reusable verified
+recommendations are available. No route, date, cabin, traveler count, program,
+fee ceiling, or hard stop constraint changes.
+  "make it cheaper"
+  "prioritize the seat"
+  "avoid long layovers"
+
+If reusable verified recommendations are unavailable, never return rerank.
+If the user changes route, date, cabin, travelers, programs, a fee ceiling, or
+requires nonstop, return route_search even if the message also sounds like a
+preference update.
+
 Ambiguity rule: a bare place name with no other context ("Tokyo") is
 route_search only if an origin appears earlier in the conversation. Otherwise
 classify it discovery and let the planner ask.
