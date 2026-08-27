@@ -56,6 +56,14 @@ describe("prepareUiSearch", () => {
     expect(describeTripRequest(request)).toContain("from SFO to TYO");
     expect(describeTripRequest(request)).toContain("±2 days");
     expect(describeTripRequest(request)).toContain("chase");
+    expect(describeTripRequest(request)).toContain("Ranking preference: Balanced (50/100 toward journey experience)");
+  });
+
+  it("writes an explicit ranking style and priorities into the audit message", () => {
+    expect(describeTripRequest({
+      ...request,
+      rankingPreference: { experienceWeight: 75, priorities: ["cabin_product", "booking_ease"] },
+    })).toContain("Ranking preference: Journey first (75/100 toward journey experience). Priorities: cabin_product, booking_ease.");
   });
 
   it("combines selected transferable and direct balances by booking program", async () => {

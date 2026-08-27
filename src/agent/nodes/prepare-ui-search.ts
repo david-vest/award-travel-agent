@@ -1,4 +1,5 @@
 import { AWARD_PROGRAMS, CREDIT_CARD_PROGRAMS, sourcesForAwardPrograms } from "../../domain/programs";
+import { defaultRankingPreference, rankingLevelLabel } from "../../domain/recommendation-preferences";
 import type { TripRequest } from "../../contracts/travel-search";
 import type { AgentStateType, SearchPlan } from "../state";
 
@@ -13,6 +14,10 @@ export function describeTripRequest(request: TripRequest): string {
   const destinations = request.destinations.map((destination) => destination.code).join(", ");
   const cards = request.creditCardPrograms.join(", ") || "selected point balances";
   const hasBalances = Object.keys(request.pointBalances.creditCards).length > 0 || Object.keys(request.pointBalances.awardPrograms).length > 0;
+  const rankingPreference = request.rankingPreference ?? defaultRankingPreference();
+  const rankingPriorities = rankingPreference.priorities.length > 0
+    ? ` Priorities: ${rankingPreference.priorities.join(", ")}.`
+    : "";
   return [
     `Search award travel from ${request.origin.code} to ${destinations}.`,
     `Travel ${request.startDate} through ${request.endDate} with ±${request.flexDays} days flexibility.`,
@@ -20,6 +25,7 @@ export function describeTripRequest(request: TripRequest): string {
     `Use ${cards}; award programs: ${request.awardPrograms.join(", ") || "all available"}.`,
     hasBalances ? "Only show awards fundable with the entered point balances." : "",
     request.maxTaxesFeesUsd != null ? `Keep taxes and fees at or below $${request.maxTaxesFeesUsd.toLocaleString()} USD per traveler.` : "",
+    `Ranking preference: ${rankingLevelLabel(rankingPreference.experienceWeight)} (${rankingPreference.experienceWeight}/100 toward journey experience).${rankingPriorities}`,
     request.notes ? `Preferences: ${request.notes}` : "",
   ].filter(Boolean).join(" ");
 }

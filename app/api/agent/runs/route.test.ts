@@ -85,6 +85,7 @@ describe("POST /api/agent/runs", () => {
           creditCardPrograms: ["chase"],
           awardPrograms: ["united"],
           pointBalances: { creditCards: {}, awardPrograms: {} },
+          rankingPreference: { experienceWeight: 75, priorities: ["cabin_product", "schedule"] },
         },
       }),
     });
@@ -101,6 +102,49 @@ describe("POST /api/agent/runs", () => {
     expect(completeEvent).toBeDefined();
     expect(completeEvent?.recommendations).toHaveLength(1);
     expect(completeEvent?.searchRan).toBe(true);
+
+    const config = mockGraphStream.mock.calls[0]?.[1] as { metadata?: Record<string, unknown> };
+    expect(config.metadata).toMatchObject({
+      ui_version: "roam-search-v2",
+      ranking_version: "deterministic-v1",
+      ranking_experience_weight: 75,
+      ranking_priorities: ["cabin_product", "schedule"],
+    });
+  });
+
+  it("traces Balanced as the backward-compatible ranking default", async () => {
+    mockGraphStream.mockImplementation(async function* () {
+      yield { synthesize: { draft: "No options found." } };
+    });
+
+    const request = new Request("http://localhost/api/agent/runs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        request: {
+          origin: { code: "SFO", airports: ["SFO"], custom: false },
+          destinations: [{ code: "TYO", airports: ["HND", "NRT"], custom: false }],
+          startDate: "2026-09-18",
+          endDate: "2026-09-27",
+          flexDays: 0,
+          cabins: ["business"],
+          travelers: 1,
+          stopPreference: "nonstop",
+          preferredAirlines: [],
+          creditCardPrograms: ["chase"],
+          awardPrograms: ["united"],
+          pointBalances: { creditCards: {}, awardPrograms: {} },
+        },
+      }),
+    });
+
+    await collectEvents(await POST(request));
+
+    const config = mockGraphStream.mock.calls[0]?.[1] as { metadata?: Record<string, unknown> };
+    expect(config.metadata).toMatchObject({
+      ranking_experience_weight: 50,
+      ranking_priorities: [],
+    });
   });
 
   it("does not emit empty recommendations on a follow-up question when no search ran", async () => {

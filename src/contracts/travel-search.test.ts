@@ -77,3 +77,42 @@ describe("tripRequestSchema bounded and validated identifiers", () => {
     expect(result.success).toBe(false);
   });
 });
+
+describe("tripRequestSchema ranking preference", () => {
+  it("accepts an explicit experience weight and bounded priority list", () => {
+    const result = tripRequestSchema.safeParse({
+      ...validRequest,
+      rankingPreference: {
+        experienceWeight: 75,
+        priorities: ["cabin_product", "connection_quality"],
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("keeps the field optional so older clients remain compatible", () => {
+    const result = tripRequestSchema.safeParse(validRequest);
+
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.rankingPreference).toBeUndefined();
+  });
+
+  it("rejects out-of-range weights and unknown priorities", () => {
+    expect(tripRequestSchema.safeParse({
+      ...validRequest,
+      rankingPreference: { experienceWeight: 101, priorities: [] },
+    }).success).toBe(false);
+    expect(tripRequestSchema.safeParse({
+      ...validRequest,
+      rankingPreference: { experienceWeight: 50, priorities: ["champagne"] },
+    }).success).toBe(false);
+  });
+
+  it("rejects recommendation weights between the five supported positions", () => {
+    expect(tripRequestSchema.safeParse({
+      ...validRequest,
+      rankingPreference: { experienceWeight: 40, priorities: [] },
+    }).success).toBe(false);
+  });
+});

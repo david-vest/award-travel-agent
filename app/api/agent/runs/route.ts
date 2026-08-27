@@ -4,6 +4,7 @@ import { agentRunRequestSchema, type AgentEvent, type AgentStage, type FlightRec
 import { describeTripRequest } from "../../../../src/agent/nodes/prepare-ui-search";
 import { getAgentGraph } from "../../../../src/agent/runtime";
 import { checkRateLimit } from "../../../../src/api/rate-limit";
+import { defaultRankingPreference } from "../../../../src/domain/recommendation-preferences";
 
 export const runtime = "nodejs";
 
@@ -66,6 +67,9 @@ export async function POST(request: Request) {
   const body = parsed.data;
   const threadId = body.threadId ?? crypto.randomUUID();
   const message = body.message ?? (body.request ? describeTripRequest(body.request) : "");
+  const rankingPreference = body.request
+    ? body.request.rankingPreference ?? defaultRankingPreference()
+    : undefined;
   const graph = await getAgentGraph();
 
   const stream = new ReadableStream<Uint8Array>({
@@ -97,10 +101,15 @@ export async function POST(request: Request) {
         const graphConfig: RunnableConfig = {
           configurable: { thread_id: threadId },
           metadata: {
-            ui_version: "roam-search-v1",
+            ui_version: "roam-search-v2",
             request_type: body.request ? "structured_search" : "follow_up",
+            ranking_version: "deterministic-v1",
             credit_programs: body.request?.creditCardPrograms ?? [],
             award_programs: body.request?.awardPrograms ?? [],
+            ...(rankingPreference ? {
+              ranking_experience_weight: rankingPreference.experienceWeight,
+              ranking_priorities: rankingPreference.priorities,
+            } : {}),
           },
           tags: ["roam-ui"],
           signal: deadlineSignal,

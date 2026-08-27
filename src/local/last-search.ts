@@ -1,4 +1,10 @@
 import type { AgentStage, FlightRecommendation } from "../contracts/travel-search";
+import {
+  RANKING_EXPERIENCE_WEIGHTS,
+  RANKING_PRIORITY_VALUES,
+  defaultRankingPreference,
+  type RankingPreference,
+} from "../domain/recommendation-preferences";
 
 /**
  * Unencrypted browser localStorage, scoped to the "resume my last search"
@@ -42,7 +48,12 @@ export type StoredSearchForm = {
   maxFees: string;
   stops: "nonstop" | "one" | "any";
   preferredAirlines: string[];
+  rankingPreference: RankingPreference;
   notes: string;
+};
+
+type StoredSearchFormInput = Omit<StoredSearchForm, "rankingPreference"> & {
+  rankingPreference?: RankingPreference;
 };
 
 export type StoredAgentRun = {
@@ -79,7 +90,14 @@ export function parseLastSearchSnapshot(raw: string | null): LastSearchSnapshot 
     if (!isRecord(value) || value.version !== 1 || typeof value.savedAt !== "string") return null;
     if (!isSearchForm(value.form) || (value.run !== null && !isAgentRun(value.run))) return null;
     if (value.chatMessages !== undefined && !isChatMessages(value.chatMessages)) return null;
-    return { ...value, chatMessages: value.chatMessages ?? [] } as LastSearchSnapshot;
+    return {
+      ...value,
+      form: {
+        ...value.form,
+        rankingPreference: value.form.rankingPreference ?? defaultRankingPreference(),
+      },
+      chatMessages: value.chatMessages ?? [],
+    } as LastSearchSnapshot;
   } catch {
     return null;
   }
@@ -92,7 +110,7 @@ function isChatMessages(value: unknown): value is StoredChatMessage[] {
     && typeof message.content === "string");
 }
 
-function isSearchForm(value: unknown): value is StoredSearchForm {
+function isSearchForm(value: unknown): value is StoredSearchFormInput {
   if (!isRecord(value)) return false;
   return isLocation(value.origin)
     && Array.isArray(value.destinations) && value.destinations.length > 0 && value.destinations.every(isLocation)
@@ -108,7 +126,16 @@ function isSearchForm(value: unknown): value is StoredSearchForm {
     && typeof value.maxFees === "string"
     && (value.stops === "nonstop" || value.stops === "one" || value.stops === "any")
     && isStringArray(value.preferredAirlines)
+    && (value.rankingPreference === undefined || isRankingPreference(value.rankingPreference))
     && typeof value.notes === "string";
+}
+
+function isRankingPreference(value: unknown): value is RankingPreference {
+  if (!isRecord(value)) return false;
+  if (!Number.isInteger(value.experienceWeight) || !isFiniteNumber(value.experienceWeight)) return false;
+  if (!RANKING_EXPERIENCE_WEIGHTS.some((weight) => weight === value.experienceWeight)) return false;
+  if (!isAllowedStringArray(value.priorities, RANKING_PRIORITY_VALUES)) return false;
+  return value.priorities.length <= RANKING_PRIORITY_VALUES.length && new Set(value.priorities).size === value.priorities.length;
 }
 
 function isAgentRun(value: unknown): value is StoredAgentRun {

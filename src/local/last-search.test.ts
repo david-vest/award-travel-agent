@@ -19,6 +19,7 @@ const snapshot: LastSearchSnapshot = {
     maxFees: "350",
     stops: "one",
     preferredAirlines: ["NH"],
+    rankingPreference: { experienceWeight: 75, priorities: ["cabin_product", "schedule"] },
     notes: "Avoid early departures",
   },
   chatMessages: [
@@ -74,6 +75,17 @@ describe("parseLastSearchSnapshot", () => {
     });
   });
 
+  it("migrates an older saved form without ranking preferences to Balanced", () => {
+    const legacySnapshot = JSON.parse(JSON.stringify(snapshot)) as {
+      form: Record<string, unknown>;
+    } & Record<string, unknown>;
+    delete legacySnapshot.form.rankingPreference;
+
+    expect(parseLastSearchSnapshot(JSON.stringify(legacySnapshot))).toMatchObject({
+      form: { rankingPreference: { experienceWeight: 50, priorities: [] } },
+    });
+  });
+
   it("ignores corrupt, unknown-version, and unsafe nested data", () => {
     expect(parseLastSearchSnapshot("{not json")).toBeNull();
     expect(parseLastSearchSnapshot(JSON.stringify({ ...snapshot, version: 2 }))).toBeNull();
@@ -83,6 +95,14 @@ describe("parseLastSearchSnapshot", () => {
         ...snapshot.run,
         recommendations: [{ ...snapshot.run!.recommendations[0], taxes: { amount: "free", currency: "USD" } }],
       },
+    }))).toBeNull();
+    expect(parseLastSearchSnapshot(JSON.stringify({
+      ...snapshot,
+      form: { ...snapshot.form, rankingPreference: { experienceWeight: 40, priorities: [] } },
+    }))).toBeNull();
+    expect(parseLastSearchSnapshot(JSON.stringify({
+      ...snapshot,
+      form: { ...snapshot.form, rankingPreference: { experienceWeight: 50, priorities: ["unknown"] } },
     }))).toBeNull();
   });
 });

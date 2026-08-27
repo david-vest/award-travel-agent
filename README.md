@@ -22,10 +22,10 @@ make dev                 # http://localhost:3000
 | Requirement | Where |
 |---|---|
 | LangGraph for state and control flow | 15-node graph, `Annotation.Root` state, conditional routing on intent/violations/staleness — [`src/agent/graph.ts`](src/agent/graph.ts), [`src/agent/state.ts`](src/agent/state.ts) |
-| LangChain for model calls, tools, RAG | `ChatAnthropic` throughout, one genuinely bound tool, `MongoDBAtlasVectorSearch` for RAG |
+| LangChain for model calls, tools, RAG | `ChatAnthropic` throughout, a typed LangChain tool at the provider boundary, `MongoDBAtlasVectorSearch` for RAG |
 | LangSmith tracing | Automatic per-node graph tracing (real API key required) plus a manual wrapper adding a child span per seats.aero HTTP call — [`src/tools/seats-aero/traced.ts`](src/tools/seats-aero/traced.ts) |
 | Solves a problem end to end | Real seats.aero data + a real knowledge base; runs live by default, falls back to recorded fixtures with no seats.aero key at all |
-| At least one tool | `get_trip_details`, bound via `.bindTools()` inside `enrich_trips` — see [Design notes](#design-notes) for why this is the *only* bound tool |
+| At least one tool | `get_trip_details`, defined with LangChain's `tool()` and invoked deterministically inside `enrich_trips` — see [Design notes](#design-notes) for the quota/reliability rationale |
 | RAG against a mini knowledge base | Hand-authored documents (sweet spots, transfer partners, booking rules, seasonality, cabin reviews), metadata-prefiltered vector search — [`knowledge/`](knowledge/), [`src/rag/`](src/rag/) |
 | Eval with expected outcomes | Three LangSmith-backed datasets with three different evaluator types — see [Evals](#evals) |
 
@@ -95,7 +95,7 @@ Because Seats.aero indexes route pairs rather than arbitrary connecting itinerar
 
 **Groundedness is checked deterministically, not by an LLM judge.** After synthesis, every mileage figure, flight number, and airline code in the draft is extracted with a regex and checked for set membership against the actual tool results already in state. "Did the model invent a flight number" is a lookup, not a judgment call — and a lookup can't itself hallucinate a verdict the way a second model call could. One violation triggers exactly one retry; if the retry is still ungrounded, the graph degrades to a plain listing of the real data rather than looping or shipping an unverified claim.
 
-**Exactly one tool is genuinely bound to the model, and it's a deliberate exception to everything above.** `get_trip_details`, called from inside `enrich_trips`, is the only operation the model can invoke on its own. Every other seats.aero call — search, regional availability, refresh — is made directly by deterministic node code, because their call counts need a hard cap enforced in code against a daily quota; a model holding a bound search tool could call it without limit. `get_trip_details` is safe to delegate specifically because by the time it's offered, the candidate list is already capped by code upstream — the worst case if the model over-calls is a handful of wasted lookups, not a runaway bill. That bounded-blast-radius property is what makes a decision worth handing to the model instead of hard-coding it.
+**The trip-detail provider boundary is a LangChain tool, but invocation is deterministic.** `get_trip_details` is defined with `tool()` so its name, description, Zod input contract, and trace shape remain explicit. `enrich_trips` invokes that tool for every candidate in a code-capped display pool; no model decides whether or how often to call it. Search, regional availability, refresh, and trip enrichment all spend provider quota, so their call counts are enforced in node code rather than entrusted to prompts. Models are reserved for the parts where semantic judgment changes the result: intent classification, planning, and grounded explanation.
 
 **Cost engineering, because this runs on a personal budget.** Sonnet 5's prompt caching is applied to the system prompts long enough to clear the 1024-token minimum (the search planner and the synthesizer — Anthropic silently no-ops `cache_control` below that threshold, so `cachedSystem()` throws rather than pretending it worked). Each node calls the model at a different effort tier — low for classification, medium for the answer that actually matters. A MongoDB-backed response cache sits in front of seats.aero's own data. The detail that actually determines whether caching pays off: today's date never enters a cached system prompt — it goes in the volatile user turn instead, the same place conversation history does, because baking a value that changes daily into a prefix meant to stay stable defeats the entire point of caching it.
 
@@ -146,7 +146,7 @@ src/
 ├─ tools/
 │  ├─ seats-aero/ # live/replay API client, response cache, LangSmith tracing wrapper
 │  ├─ locations/  # deterministic airport/region resolver (OpenFlights-backed)
-│  ├─ search-awards.ts, trip-details.ts  # normalization + the one bound tool
+│  ├─ search-awards.ts, trip-details.ts  # normalization + typed trip-detail tool
 ├─ rag/           # frontmatter schema, Atlas ingest, metadata-prefiltered retriever
 ├─ agent/
 │  ├─ state.ts, models.ts, cache.ts, runtime.ts  # graph state, model factory, prompt caching, compiled-graph reuse

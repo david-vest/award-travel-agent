@@ -12,6 +12,14 @@ import { AWARD_PROGRAMS, CREDIT_CARD_PROGRAMS, type AwardProgramId, type CreditC
 import { SUPPORTED_AIRLINES } from "../src/domain/airlines";
 import type { FlightRecommendation, TripRequest } from "../src/contracts/travel-search";
 import {
+  RANKING_EXPERIENCE_WEIGHTS,
+  RANKING_LEVELS,
+  defaultRankingPreference,
+  rankingLevelLabel,
+  type RankingPreference,
+  type RankingPriority,
+} from "../src/domain/recommendation-preferences";
+import {
   LAST_SEARCH_STORAGE_KEY,
   parseLastSearchSnapshot,
   type LastSearchSnapshot,
@@ -52,6 +60,15 @@ const cabinOptions: { id: Cabin; name: string; short: string; code: string }[] =
   { id: "first", name: "First", short: "First", code: "F" },
 ];
 
+const rankingPriorityOptions: Array<{ id: RankingPriority; label: string }> = [
+  { id: "cabin_product", label: "Best seat" },
+  { id: "schedule", label: "Better schedule" },
+  { id: "few_connections", label: "Fewer stops" },
+  { id: "connection_quality", label: "Easier connections" },
+  { id: "booking_ease", label: "Easier booking" },
+  { id: "low_transfer_risk", label: "Lower transfer risk" },
+];
+
 export default function Home() {
   const [origin, setOrigin] = useState<LocationOption | null>(originInitial);
   const [destinations, setDestinations] = useState(destinationInitial);
@@ -67,6 +84,7 @@ export default function Home() {
   const [maxFees, setMaxFees] = useState("");
   const [stops, setStops] = useState<"nonstop" | "one" | "any">("one");
   const [preferredAirlines, setPreferredAirlines] = useState<string[]>([]);
+  const [rankingPreference, setRankingPreference] = useState<RankingPreference>(defaultRankingPreference);
   const [airlineQuery, setAirlineQuery] = useState("");
   const [openPanel, setOpenPanel] = useState<OpenPanel>(null);
   const [notes, setNotes] = useState("");
@@ -113,6 +131,7 @@ export default function Home() {
     setMaxFees("");
     setStops("one");
     setPreferredAirlines([]);
+    setRankingPreference(defaultRankingPreference());
     setAirlineQuery("");
     setNotes("");
     setOpenPanel(null);
@@ -154,6 +173,7 @@ export default function Home() {
       setMaxFees(form.maxFees);
       setStops(form.stops);
       setPreferredAirlines(form.preferredAirlines);
+      setRankingPreference(form.rankingPreference);
       setNotes(form.notes);
       setChatMessages(snapshot.chatMessages);
       if (snapshot.run) restoreAgentRun(snapshot.run);
@@ -199,6 +219,7 @@ export default function Home() {
       maxFees,
       stops,
       preferredAirlines,
+      rankingPreference,
       notes,
     };
     lastSubmittedFormRef.current = form;
@@ -214,6 +235,7 @@ export default function Home() {
       travelers: Number.parseInt(travelers, 10) || 1,
       stopPreference: stops === "one" ? "up_to_one" : stops,
       preferredAirlines,
+      rankingPreference,
       creditCardPrograms: selectedCreditPrograms,
       awardPrograms: selectedAwardPrograms,
       pointBalances: {
@@ -331,6 +353,50 @@ export default function Home() {
                 })}</div></div>}
               </div>
               <label className={styles.limitField}><span>Max taxes &amp; fees</span><div><b>$</b><input inputMode="decimal" value={maxFees} onChange={(event) => setMaxFees(decimalOnly(event.target.value))} placeholder="Any" aria-label="Maximum taxes and fees per traveler in USD" /><small>USD / traveler</small></div></label>
+            </div>
+            <div className={styles.rankingPreference}>
+              <div className={styles.rankingPreferenceHeading}>
+                <label htmlFor="ranking-experience">How should Roam rank the options?</label>
+                <output htmlFor="ranking-experience">{rankingLevelLabel(rankingPreference.experienceWeight)}</output>
+              </div>
+              <input
+                id="ranking-experience"
+                className={styles.rankingSlider}
+                type="range"
+                min={RANKING_EXPERIENCE_WEIGHTS[0]}
+                max={RANKING_EXPERIENCE_WEIGHTS[RANKING_EXPERIENCE_WEIGHTS.length - 1]}
+                step={25}
+                value={rankingPreference.experienceWeight}
+                aria-valuetext={rankingLevelLabel(rankingPreference.experienceWeight)}
+                onChange={(event) => setRankingPreference((current) => ({
+                  ...current,
+                  experienceWeight: Number(event.target.value),
+                }))}
+              />
+              <div className={styles.rankingScale} aria-hidden="true">
+                {RANKING_LEVELS.map((level) => <span key={level.value}>{level.label}</span>)}
+              </div>
+              <div className={styles.rankingPriorityPicker} role="group" aria-label="Optional ranking priorities">
+                <span>What matters most?</span>
+                <div>
+                  {rankingPriorityOptions.map((option) => {
+                    const selected = rankingPreference.priorities.includes(option.id);
+                    return <button
+                      type="button"
+                      key={option.id}
+                      aria-pressed={selected}
+                      className={selected ? styles.rankingPriorityActive : ""}
+                      onClick={() => setRankingPreference((current) => ({
+                        ...current,
+                        priorities: selected
+                          ? current.priorities.filter((priority) => priority !== option.id)
+                          : [...current.priorities, option.id],
+                      }))}
+                    >{option.label}</button>;
+                  })}
+                </div>
+              </div>
+              <p>Cabin, dates, travelers, balances, fee ceilings, and a nonstop selection remain firm constraints.</p>
             </div>
           </div>
 

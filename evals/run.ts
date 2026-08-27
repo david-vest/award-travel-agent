@@ -143,6 +143,7 @@ function experimentMetadata(): Record<string, unknown> {
   return {
     mode: "replay", // Evals never touch the live API; replay keeps them reproducible.
     environment: process.env.NODE_ENV ?? "development",
+    rankingVersion: "deterministic-v1",
     ...(gitSha ? { gitSha } : {}),
   };
 }

@@ -1,11 +1,24 @@
 import { z } from "zod";
 import { AWARD_PROGRAMS, CREDIT_CARD_PROGRAMS, type AwardProgramId, type CreditCardProgramId } from "../domain/programs";
+import {
+  RANKING_EXPERIENCE_WEIGHTS,
+  RANKING_PRIORITY_VALUES,
+  type RankingPreference,
+} from "../domain/recommendation-preferences";
 
 export const CABIN_VALUES = ["economy", "premium", "business", "first"] as const;
 export const STOP_PREFERENCES = ["nonstop", "up_to_one", "any"] as const;
 
 const AWARD_PROGRAM_IDS = AWARD_PROGRAMS.map((p) => p.id) as [AwardProgramId, ...AwardProgramId[]];
 const CREDIT_CARD_PROGRAM_IDS = CREDIT_CARD_PROGRAMS.map((p) => p.id) as [CreditCardProgramId, ...CreditCardProgramId[]];
+
+export const rankingPreferenceSchema = z.object({
+  experienceWeight: z.number().int().refine(
+    (value) => RANKING_EXPERIENCE_WEIGHTS.some((weight) => weight === value),
+    { message: "Experience weight must be 0, 25, 50, 75, or 100." },
+  ),
+  priorities: z.array(z.enum(RANKING_PRIORITY_VALUES)).max(RANKING_PRIORITY_VALUES.length).default([]),
+});
 
 const tripLocationSchema = z.object({
   code: z.string().trim().min(1).max(100),
@@ -39,6 +52,8 @@ export const tripRequestSchema = z.object({
   }).default({ creditCards: {}, awardPrograms: {} }),
   /** Per-traveler cash ceiling. Seats.aero's max_fees parameter uses USD cents. */
   maxTaxesFeesUsd: z.number().nonnegative().max(100_000).optional(),
+  /** Soft recommendation weighting. Search eligibility remains governed by the fields above. */
+  rankingPreference: rankingPreferenceSchema.optional(),
   notes: z.string().trim().max(1_000).optional(),
 }).superRefine((value, ctx) => {
   if (value.endDate < value.startDate) {
@@ -47,6 +62,7 @@ export const tripRequestSchema = z.object({
 });
 
 export type TripRequest = z.infer<typeof tripRequestSchema>;
+export type { RankingPreference };
 
 export const agentRunRequestSchema = z.object({
   threadId: z.string().uuid().optional(),

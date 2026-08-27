@@ -42,10 +42,10 @@ const uniq = (xs: (string | undefined)[]): string[] =>
   [...new Set(xs.filter((x): x is string => Boolean(x)))];
 
 /**
- * Aircraft type is why this call exists: it is intended as the join key into
- * the cabin product reviews in the knowledge base (a later retrieval step) —
+ * Aircraft type is why this call exists: it is the join key used by the later
+ * retrieval step to find relevant cabin-product reviews —
  * "ANA 777-300ER" and "Lufthansa A340" are very different seats at the same
- * price. Not wired up yet.
+ * price.
  */
 export function summarizeTrip(trip: Trip, availabilityId: string): TripSummary {
   const segments = trip.AvailabilitySegments ?? [];
@@ -71,9 +71,9 @@ export function summarizeTrip(trip: Trip, availabilityId: string): TripSummary {
 }
 
 /**
- * The one tool a model actually calls in this codebase. Safe to delegate
- * specifically because Task 4.6 only ever offers it against an already
- * hard-capped candidate list — see this task's design note.
+ * A typed LangChain tool used as the provider boundary for trip enrichment.
+ * The graph invokes it deterministically for a hard-capped candidate list;
+ * no model controls provider call count.
  */
 export function makeGetTripDetailsTool(client: SeatsAeroClient) {
   return tool(

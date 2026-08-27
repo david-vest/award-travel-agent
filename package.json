@@ -14,6 +14,7 @@
     "seed": "tsx src/rag/ingest.ts",
     "record": "tsx scripts/record-fixtures.ts",
     "ingest:airports": "tsx scripts/ingest-airports.ts",
+    "diagram:generate": "node scripts/generate-architecture-diagrams.mjs",
     "eval": "tsx evals/run.ts",
     "prepare": "husky"
   },

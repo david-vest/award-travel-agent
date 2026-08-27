@@ -111,7 +111,7 @@ flowchart TD
   
   Search["search_awards<br/><i>(Seats.aero API / Replay)</i>"]:::toolNode
   Refresh["refresh_availability<br/><i>(Deterministic Quota Gate)</i>"]:::toolNode
-  Enrich["enrich_trips<br/><i>(get_trip_details Bound Tool)</i>"]:::llmToolNode
+  Enrich["enrich_trips<br/><i>(Deterministic get_trip_details Tool)</i>"]:::toolNode
   Position["search_positioning<br/><i>(Broadened Gateway Ladder)</i>"]:::toolNode
   
   RAG["retrieve_knowledge<br/><i>(Atlas Vector Search)</i>"]:::ragNode
@@ -212,7 +212,7 @@ Rather than guessing knowledge queries before award space is found:
 ### 4. Cost Engineering & Prompt Caching
 - **Ephemeral Prompt Caching**: System prompts over 1,024 tokens (the search planner and synthesizer) leverage Anthropic's `cache_control: { type: "ephemeral" }`.
 - **Dynamic Clock Isolation**: Ephemeral time/date data is injected solely into user turns, ensuring system prompt prefixes remain byte-identical across runs for maximum cache-hit rates.
-- **Quota Protection**: Expensive external API calls (e.g., live Seats.aero `/refresh`) are deterministic graph nodes with strict rate limits, rather than open tools given to the model. Only `get_trip_details` is bound as an LLM tool inside `enrich_trips`, with capped candidate pools.
+- **Quota Protection**: Expensive external API calls (e.g., live Seats.aero `/refresh`) are deterministic graph nodes with strict rate limits, rather than open tools given to the model. `get_trip_details` is a typed LangChain tool invoked by deterministic `enrich_trips` code across a capped candidate pool.
 
 ---
 
@@ -260,9 +260,8 @@ sequenceDiagram
   API-->>UI: SSE: event "stage" (Found live award seats)
 
   opt Enrich Itineraries
-    Graph->>LLM: enrich_trips (Invoke get_trip_details for aircraft/stops)
-    LLM->>Tool: get_trip_details(trip_id)
-    Tool-->>LLM: Return detailed segment data
+    Graph->>Tool: enrich_trips invokes get_trip_details for capped candidates
+    Tool-->>Graph: Return aircraft, schedule, stops, and segment data
   end
 
   Graph->>RAG: retrieve_knowledge (Query with real programs & cabins)

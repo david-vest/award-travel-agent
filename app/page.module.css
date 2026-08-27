@@ -152,6 +152,23 @@
 .limitField small { color: var(--muted); font-size: 10px; white-space: nowrap; }
 .limitField:focus-within { border-color: #769386; box-shadow: 0 0 0 3px rgba(19,88,61,.07); }
 
+.rankingPreference { margin-top: 3px; padding: 13px 14px 12px; border: 1px solid var(--line-strong); border-radius: 7px; background: rgba(255,255,255,.26); }
+.rankingPreferenceHeading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.rankingPreferenceHeading label { color: #38433d; font-size: 11px; font-weight: 650; }
+.rankingPreferenceHeading output { color: var(--green); font-size: 11px; font-weight: 750; text-align: right; }
+.rankingSlider { width: 100%; height: 20px; margin: 7px 0 0; accent-color: var(--green); cursor: pointer; }
+.rankingSlider:focus-visible { outline: 2px solid #769386; outline-offset: 3px; border-radius: 8px; }
+.rankingScale { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; color: var(--muted); font-size: 8px; line-height: 1.2; }
+.rankingScale span { text-align: center; }
+.rankingScale span:first-child { text-align: left; }
+.rankingScale span:last-child { text-align: right; }
+.rankingPriorityPicker { margin-top: 11px; padding-top: 10px; border-top: 1px solid var(--line); display: grid; gap: 7px; }
+.rankingPriorityPicker > span { color: var(--muted); font-size: 10px; font-weight: 650; }
+.rankingPriorityPicker > div { display: flex; flex-wrap: wrap; gap: 5px; }
+.rankingPriorityPicker button { min-height: 28px; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: 20px; background: transparent; color: var(--muted); font: inherit; font-size: 10px; cursor: pointer; }
+.rankingPriorityPicker button:hover, .rankingPriorityPicker .rankingPriorityActive { border-color: var(--green); background: var(--sage); color: var(--green); }
+.rankingPreference > p { margin-top: 9px; color: var(--muted); font-size: 9px; line-height: 1.35; }
+
 .textLabel { margin-top: 13px; display: grid; gap: 7px; color: #38433d; font-size: 11px; font-weight: 600; }
 .textLabel > input, .notesInput { height: 45px; border: 1px solid var(--line-strong); border-radius: 6px; background: rgba(255,255,255,.26); }
 .textLabel > input { padding: 0 12px; color: var(--ink); font: inherit; font-size: 11px; outline: 0; }
@@ -330,6 +347,7 @@
   .researchHeader { flex-direction: column; }.timestamp { align-items: flex-start; }
   .researchStep { grid-template-columns: 40px 1fr; gap: 8px; }.researchStep:not(:last-child)::after { left: 19px; }
   .filterHeading small { display: none; }.filterRow { grid-template-columns: 1fr; }
+  .rankingScale { font-size: 7px; }
   .calendarMenu { right: -8px; }
   .pointsMenu { right: -8px; bottom: 75px; }.creditProgramGrid { grid-template-columns: 1fr; }
   .resultsToolbar { flex-wrap: wrap; }.sortControl { flex: 1 1 180px; }.filterLimits, .programFilterGrid { grid-template-columns: 1fr; }
