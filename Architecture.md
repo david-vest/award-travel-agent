@@ -111,6 +111,7 @@ flowchart TD
   Preferences["interpret_preferences<br/><i>(Bounded Soft-Preference Parsing)</i>"]:::llmNode
   
   Search["search_awards<br/><i>(Seats.aero API / Replay)</i>"]:::toolNode
+  Clarify["clarify_search_constraints<br/><i>(Checkpointed Human Decision)</i>"]:::detNode
   Refresh["refresh_availability<br/><i>(Deterministic Quota Gate)</i>"]:::toolNode
   Enrich["enrich_trips<br/><i>(Deterministic get_trip_details Tool)</i>"]:::toolNode
   Position["search_positioning<br/><i>(Broadened Gateway Ladder)</i>"]:::toolNode
@@ -146,6 +147,9 @@ flowchart TD
   PlanDisc --> Preferences
   Preferences --> Search
   
+  Search -.->|"consequential ambiguity"| Clarify
+  Clarify -.->|"relax constraint"| Search
+  Clarify -.->|"keep exact brief"| Shortlist
   Search -.->|"requires_refresh"| Refresh
   Search -.->|"skip_refresh"| Shortlist
   Refresh --> Shortlist
@@ -189,14 +193,14 @@ flowchart TD
 | **Frontend Runtime** | **React 19.2.8** | State hooks, responsive CSS modules, dynamic comparison rail, SSE event listener | `app/page.tsx`, `app/useAgentRun.ts` |
 | **Styling & Typography** | **CSS Modules + Fontsource** | Bespoke dark/light themes, Manrope (sans) and Newsreader (editorial serif) | `app/page.module.css`, `app/globals.css` |
 | **Icons & Visuals** | **Phosphor Icons React** | Accessible, consistent iconography for cabins, airlines, transfers, and controls | `app/AirlineLogo.tsx`, `app/page.tsx` |
-| **Agent State Machine** | **@langchain/langgraph 1.4.9** | 21-node cyclic execution graph with conditional branching, checkpoint reuse, and grounded retries | `src/agent/graph.ts`, `src/agent/state.ts` |
+| **Agent State Machine** | **@langchain/langgraph 1.4.9** | 22-node cyclic execution graph with conditional branching, checkpointed human interrupts, checkpoint reuse, and grounded retries | `src/agent/graph.ts`, `src/agent/state.ts` |
 | **LLM Orchestration** | **@langchain/anthropic 1.5.4** | Claude 3.5 Sonnet integration with ephemeral prompt caching (`cache_control`) | `src/agent/models.ts`, `src/agent/cache.ts` |
 | **Vector Search & DB** | **MongoDB Atlas & MongoDB Node SDK 6.21** | Vector search index for knowledge retrieval & conversation checkpointer (`MongoDBSaver`) | `src/rag/store.ts`, `src/rag/retriever.ts` |
 | **Vector Embeddings** | **Voyage AI (`voyage-3-lite`)** | High-dimensional dense embeddings for award rules, reviews, and transfer policies | `src/rag/store.ts`, `src/rag/ingest.ts` |
 | **Award Data Engine** | **Seats.aero Partner API** | Real-time availability, cached searches, route-ladder positioning, and replay fixtures | `src/tools/seats-aero/`, `fixtures/seats-aero/` |
 | **Location Intelligence** | **OpenFlights Dataset (~6k airports)** | Deterministic IATA, metro-area, regional, and geo-coordinate resolution | `src/tools/locations/`, `scripts/ingest-airports.ts` |
 | **Type Validation** | **Zod 4.4.3** | Strict schema validation for API payloads, tool arguments, frontmatter, and graph state | `src/contracts/`, `src/rag/frontmatter.ts` |
-| **Observability & Tracing**| **LangSmith 0.8.10** | Graph execution tracing, custom HTTP child spans for external APIs, run tagging | `src/tools/seats-aero/traced.ts` |
+| **Observability & Tracing**| **LangSmith 0.8.10** | Graph tracing, external API child spans, preference feedback, failure annotation queues, and reviewed-run dataset promotion | `src/tools/seats-aero/traced.ts`, `src/observability/user-feedback.ts` |
 | **Testing & Evals** | **Vitest 4.1.10 + LangSmith Evals** | 3-tier eval suite (Intent routing, Search planning F1, Groundedness judge) | `evals/`, `src/**/*.test.ts` |
 
 ---
@@ -297,8 +301,8 @@ sequenceDiagram
     Note over Graph: Retry synthesis or degrade to raw facts
   end
 
-  API-->>UI: SSE: event "result" (Ranked flight cards)
-  API-->>UI: SSE: event "answer" (Final grounded narrative)
-  API-->>UI: SSE: event "done"
+  API-->>UI: SSE: event "results" (Ranked flight cards)
+  API-->>UI: SSE: event "answer_delta" (Progressive grounded narrative)
+  API-->>UI: SSE: event "complete"
   UI->>User: Displays interactive flight cards & recommendation breakdown
 ```

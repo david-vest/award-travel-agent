@@ -16,6 +16,7 @@
     "ingest:airports": "tsx scripts/ingest-airports.ts",
     "diagram:generate": "node scripts/generate-architecture-diagrams.mjs",
     "eval": "tsx evals/run.ts",
+    "feedback:promote": "tsx scripts/promote-reviewed-feedback.ts",
     "prepare": "husky"
   },
   "dependencies": {

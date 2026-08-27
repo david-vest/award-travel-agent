@@ -1,6 +1,7 @@
 import type { AgentStateType } from "./state";
 import { shouldRefresh } from "./nodes/refresh";
 import { needsPositioningSearch } from "./nodes/search";
+import { needsSearchConstraintClarification } from "./nodes/clarify-search-constraints";
 
 export function routeAfterGuard(state: AgentStateType): "triage" | "resolve_ui_locations" | "refuse" {
   if (state.intent === "rejected") return "refuse";
@@ -30,8 +31,17 @@ export const MAX_REVISIONS = 1;
 
 export function routeAfterSearch(
   state: AgentStateType,
-): "refresh_availability" | "build_candidate_shortlist" {
+): "clarify_search_constraints" | "refresh_availability" | "build_candidate_shortlist" {
+  if (needsSearchConstraintClarification(state)) return "clarify_search_constraints";
   return shouldRefresh(state) ? "refresh_availability" : "build_candidate_shortlist";
+}
+
+export function routeAfterClarification(
+  state: AgentStateType,
+): "search_awards" | "build_candidate_shortlist" {
+  return state.clarificationResolution === "keep_constraints"
+    ? "build_candidate_shortlist"
+    : "search_awards";
 }
 
 export function routeAfterEnrich(

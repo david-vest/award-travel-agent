@@ -1,4 +1,4 @@
-import type { AgentStage, FlightRecommendation } from "../contracts/travel-search";
+import type { AgentStage, ClarificationRequest, FlightRecommendation } from "../contracts/travel-search";
 import {
   defaultRankingPreference,
   type RankingPreference,
@@ -41,7 +41,7 @@ export type StoredSearchForm = {
 };
 
 export type StoredAgentRun = {
-  status: "complete" | "error";
+  status: "clarification" | "complete" | "error";
   stages: Record<AgentStage, "waiting" | "active" | "complete">;
   stageDetails: Record<AgentStage, string>;
   stageDurations: Partial<Record<AgentStage, number>>;
@@ -49,6 +49,10 @@ export type StoredAgentRun = {
   answer: string;
   error: string | null;
   threadId: string | null;
+  /** Optional for snapshots written before Phase 9. */
+  runId?: string | null;
+  /** Optional for snapshots written before Phase 8. */
+  clarification?: ClarificationRequest | null;
 };
 
 export type StoredChatMessage = {

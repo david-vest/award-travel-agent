@@ -19,7 +19,7 @@ type StoredSearchFormInput = Omit<StoredSearchForm, "rankingPreference"> & {
 const LOCATION_KINDS = ["airport", "city", "group", "custom"] as const;
 const CABINS = ["economy", "premium", "business", "first"] as const;
 const STOP_FILTERS = ["nonstop", "one", "any"] as const;
-const RUN_STATUSES = ["complete", "error"] as const;
+const RUN_STATUSES = ["clarification", "complete", "error"] as const;
 const STAGE_STATUSES = ["waiting", "active", "complete"] as const;
 const CONFIDENCE_LEVELS = ["high", "medium", "low"] as const;
 const RECOMMENDATION_BADGES = ["best_overall", "best_value", "best_experience", "best_schedule"] as const;
@@ -161,6 +161,16 @@ const storedAgentRunSchema: z.ZodType<StoredAgentRun> = z.object({
   answer: z.string(),
   error: z.string().nullable(),
   threadId: z.string().nullable(),
+  runId: z.string().nullable().optional(),
+  clarification: z.object({
+    id: z.string(),
+    prompt: z.string(),
+    choices: z.array(z.object({
+      id: z.enum(["allow_one_stop", "try_premium_economy", "keep_constraints"]),
+      label: z.string(),
+      description: z.string(),
+    })).min(2).max(3),
+  }).nullable().optional(),
 }).passthrough();
 
 const storedChatMessageSchema: z.ZodType<StoredChatMessage> = z.object({

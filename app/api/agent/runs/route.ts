@@ -1,6 +1,8 @@
 import { HumanMessage } from "@langchain/core/messages";
+import type { BaseMessage } from "@langchain/core/messages";
 import type { RunnableConfig } from "@langchain/core/runnables";
-import { agentRunRequestSchema, type AgentEvent, type AgentStage, type FlightRecommendation } from "../../../../src/contracts/travel-search";
+import { Command, isInterrupted } from "@langchain/langgraph";
+import { agentRunRequestSchema, type AgentEvent, type AgentStage, type ClarificationRequest, type FlightRecommendation } from "../../../../src/contracts/travel-search";
 import { describeTripRequest } from "../../../../src/agent/nodes/prepare-ui-search";
 import { getAgentGraph } from "../../../../src/agent/runtime";
 import { checkRateLimit } from "../../../../src/api/rate-limit";
@@ -43,6 +45,34 @@ function eventPayload(event: AgentEvent): Uint8Array {
   return encoder.encode(`data: ${JSON.stringify(event)}\n\n`);
 }
 
+function messageText(message: BaseMessage): string {
+  if (typeof message.content === "string") return message.content;
+  return message.content
+    .flatMap((block) => {
+      if (typeof block === "string") return [block];
+      if (block && typeof block === "object" && "text" in block && typeof block.text === "string") {
+        return [block.text];
+      }
+      return [];
+    })
+    .join("");
+}
+
+type GraphUpdate = Record<string, Record<string, unknown>>;
+type GraphStreamChunk =
+  | ["updates", GraphUpdate]
+  | ["messages", [BaseMessage, Record<string, unknown>]]
+  // Kept for test doubles and an older single-mode stream shape.
+  | GraphUpdate;
+
+function splitGraphChunk(chunk: GraphStreamChunk):
+  | { mode: "updates"; data: GraphUpdate }
+  | { mode: "messages"; data: [BaseMessage, Record<string, unknown>] } {
+  if (Array.isArray(chunk) && chunk[0] === "messages") return { mode: "messages", data: chunk[1] };
+  if (Array.isArray(chunk) && chunk[0] === "updates") return { mode: "updates", data: chunk[1] };
+  return { mode: "updates", data: chunk };
+}
+
 export async function POST(request: Request) {
   const rateLimit = checkRateLimit(clientKey(request), RATE_LIMIT);
   if (!rateLimit.allowed) {
@@ -74,6 +104,7 @@ export async function POST(request: Request) {
 
   const body = parsed.data;
   const threadId = body.threadId ?? crypto.randomUUID();
+  const runId = crypto.randomUUID();
   const message = body.message ?? (body.request ? describeTripRequest(body.request) : "");
   const rankingPreference = body.request
     ? body.request.rankingPreference ?? defaultRankingPreference()
@@ -85,8 +116,9 @@ export async function POST(request: Request) {
       const send = (event: AgentEvent) => controller.enqueue(eventPayload(event));
       let recommendations: FlightRecommendation[] = [];
       let answer = "";
-      let searchExecuted = Boolean(body.request);
+      let searchExecuted = false;
       let rerankExecuted = false;
+      let interrupted = false;
       const stageStartedAt = new Map<AgentStage, number>();
       const stageStatus = new Map<AgentStage, "active" | "complete">();
 
@@ -104,14 +136,21 @@ export async function POST(request: Request) {
       const deadlineSignal = AbortSignal.any([request.signal, AbortSignal.timeout(EXECUTION_DEADLINE_MS)]);
 
       try {
-        send({ type: "run_started", threadId });
-        activateStage("search", body.request ? "Preparing the exact-route award query." : "Reading the follow-up and deciding whether a new search is needed.");
+        send({ type: "run_started", threadId, runId });
+        activateStage(
+          "search",
+          body.resume
+            ? "Resuming the saved search with your selected constraint."
+            : body.request
+              ? "Preparing the exact-route award query."
+              : "Reading the follow-up and deciding whether a new search is needed.",
+        );
 
         const graphConfig: RunnableConfig = {
           configurable: { thread_id: threadId },
           metadata: {
             ui_version: "roam-search-v2",
-            request_type: body.request ? "structured_search" : "follow_up",
+            request_type: body.resume ? "clarification_resume" : body.request ? "structured_search" : "follow_up",
             ranking_version: RECOMMENDATION_PIPELINE_VERSION,
             preference_interpreter_version: PREFERENCE_INTERPRETER_VERSION,
             candidate_shortlist_version: CANDIDATE_SHORTLIST_VERSION,
@@ -126,18 +165,44 @@ export async function POST(request: Request) {
             } : {}),
           },
           tags: ["roam-ui"],
+          runId,
           signal: deadlineSignal,
         };
+        const graphInput = (body.resume
+          ? new Command({ resume: body.resume.choiceId })
+          : {
+              messages: [new HumanMessage(message)],
+              tripRequest: body.request ?? null,
+            }) as Parameters<typeof graph.stream>[0];
         const graphStream = await graph.stream(
-          {
-            messages: [new HumanMessage(message)],
-            tripRequest: body.request ?? null,
-          },
-          { ...graphConfig, streamMode: "updates" },
+          graphInput,
+          { ...graphConfig, streamMode: ["updates", "messages"] },
         );
 
-        for await (const update of graphStream as AsyncIterable<Record<string, Record<string, unknown>>>) {
+        for await (const chunk of graphStream as AsyncIterable<GraphStreamChunk>) {
           if (deadlineSignal.aborted) break;
+          const streamEvent = splitGraphChunk(chunk);
+          if (streamEvent.mode === "messages") {
+            const [messageChunk, metadata] = streamEvent.data;
+            if (metadata.langgraph_node === "synthesize") {
+              const delta = messageText(messageChunk);
+              if (delta) {
+                answer += delta;
+                send({ type: "answer_delta", text: delta });
+              }
+            }
+            continue;
+          }
+
+          const update = streamEvent.data;
+          if (isInterrupted<ClarificationRequest>(update)) {
+            const clarification = update.__interrupt__[0]?.value;
+            if (clarification) {
+              interrupted = true;
+              send({ type: "clarification_required", clarification });
+            }
+            continue;
+          }
           for (const [node, data] of Object.entries(update)) {
             // Surfaces a dependency degrading (e.g. refresh outage, RAG
             // retrieval failure) so the UI/trace can distinguish "nothing
@@ -217,12 +282,11 @@ export async function POST(request: Request) {
             }
             if (typeof data.draft === "string") {
               answer = data.draft;
-              send({ type: "answer_delta", text: answer });
             }
           }
         }
 
-        if (!request.signal.aborted) {
+        if (!request.signal.aborted && !interrupted) {
           if (deadlineSignal.aborted) {
             send({
               type: "error",

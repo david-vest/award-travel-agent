@@ -21,7 +21,7 @@ make dev                 # http://localhost:3000
 
 | Requirement | Where |
 |---|---|
-| LangGraph for state and control flow | 19-node graph, `Annotation.Root` state, conditional routing on intent/violations/staleness — [`src/agent/graph.ts`](src/agent/graph.ts), [`src/agent/state.ts`](src/agent/state.ts) |
+| LangGraph for state and control flow | 22-node graph, `Annotation.Root` state, conditional routing on intent/violations/staleness, plus checkpointed human interrupts — [`src/agent/graph.ts`](src/agent/graph.ts), [`src/agent/state.ts`](src/agent/state.ts) |
 | LangChain for model calls, tools, RAG | `ChatAnthropic` throughout, a typed LangChain tool at the provider boundary, `MongoDBAtlasVectorSearch` for RAG |
 | LangSmith tracing | Automatic per-node graph tracing (real API key required) plus a manual wrapper adding a child span per seats.aero HTTP call — [`src/tools/seats-aero/traced.ts`](src/tools/seats-aero/traced.ts) |
 | Solves a problem end to end | Real seats.aero data + a real knowledge base; runs live by default, falls back to recorded fixtures with no seats.aero key at all |
@@ -34,7 +34,7 @@ make dev                 # http://localhost:3000
 | | |
 |---|---|
 | Guardrails | An input-screening node rejects off-topic/injection-shaped messages before anything else runs; a deterministic groundedness verifier checks every claim in the draft against real tool output and retries or degrades rather than shipping an unsupported answer |
-| Streaming output | The API streams typed SSE events — a status event per graph node, then result data, then the answer |
+| Streaming output | The API combines graph updates with synthesis-only message streaming, delivering ranked results before incremental answer tokens |
 | Docker / Makefile | `docker-compose.yml` (MongoDB Atlas Local) + `Makefile` (`setup`, `seed`, `dev`, `record`, `eval`, `test`) |
 
 ## What happens on a search
@@ -66,7 +66,9 @@ flowchart TD
   Resolve --> Form["prepare_ui_search"]
   Form --> Preferences["interpret_preferences"]
   Preferences --> Search["search_awards tool"]
-  Search --> Shortlist["build_candidate_shortlist"]
+  Search --> Clarify{"consequential ambiguity?"}
+  Clarify -->|"relax stops or cabin"| Search
+  Clarify -->|"keep constraints"| Shortlist["build_candidate_shortlist"]
   Shortlist --> Enrich["enrich_trips"]
   Enrich -->|"exact option is weak"| Position["search_positioning"]
   Position --> Shortlist
@@ -77,7 +79,7 @@ flowchart TD
   Triage -->|"preference-only follow-up"| Rerank["update_rerank_preferences"]
   Rerank --> Rank
   Rank --> Synthesize["synthesize + verify"]
-  Synthesize --> SSE["typed SSE events"]
+  Synthesize --> SSE["results + answer deltas"]
   SSE --> UI
 ```
 
@@ -90,6 +92,8 @@ Soft ranking language is interpreted by a low-cost structured-output model, then
 Option-specific retrieval first joins sourced documents by carrier + normalized aircraft + cabin, award program, or actual connection airport/route. One bounded structured-output model call scores only qualitative dimensions supported by that option's evidence; it never receives mileage, fees, flight numbers, or schedules. Code calculates objective schedule and connection scores, robust normalized value, the slider-weighted overall score, stable tie-breakers, category badges, and tradeoffs against the cheapest eligible option. Model or retrieval failure falls back to objective dimensions with reduced confidence.
 
 Preference-only follow-ups such as “make it cheaper” restore the checkpointed candidates and validated assessments, update only the soft preference profile, and jump directly back to deterministic ranking. Route, date, cabin, traveler, program, fee-ceiling, and hard-stop changes still trigger a new provider search. The results rail exposes evidence confidence, supported tradeoff deltas, category badges, and an accessible two- or three-flight comparison without mutating server ranks when the user changes the local sort.
+
+When an exact nonstop premium-cabin search returns nothing, Roam pauses with a LangGraph `interrupt()` instead of silently guessing which hard constraint to weaken. The traveler can allow one stop, try premium economy, or keep the original brief; the API resumes the same Mongo-backed thread with `Command`, so completed provider work is not replayed. Ranked cards stream before the narrative finishes, and thumbs plus the traveler’s selected option are recorded as balance-free LangSmith feedback. Downvotes enter a human annotation queue, whose reviewed runs can be promoted with `npm run feedback:promote`.
 
 Because Seats.aero indexes route pairs rather than arbitrary connecting itineraries, Roam uses a bounded positioning ladder when the exact route has no strong option. For example, ORD→FUK broadens to ORD→TYO/JPN, then USA→JPN, and finally USA→ASA. The quality gate considers points, fees, duration, stops, and known seat count. A run can spend at most four Seats.aero route-search calls, and every broadened result is labeled with the separate positioning segment(s) it requires.
 
@@ -137,7 +141,7 @@ Building this eval suite surfaced two genuine bugs unrelated to the evals themse
 ## Tradeoffs and next steps
 
 - Provider availability is volatile; Roam surfaces known seat counts but asks the advisor to confirm before a points transfer.
-- The API streams stage and result events today; token-level answer deltas can be added when synthesis uses a streaming model invocation (`streamMode: "messages"` filtered to the synthesize node).
+- The UI now consumes true synthesis token deltas. Groundedness verification still runs after synthesis, so a rare failed first draft may be replaced by the bounded retry's final verified answer at completion.
 - Fixture replay makes local development deterministic, but only recorded request shapes have inventory. Record fresh fixtures with `npm run record` when adding demo scenarios — the recording script itself still needs the same `take`/`order_by` fix applied to the eval fixtures.
 - **Discovery's origin handling.** Live testing surfaced a real, reproducible case — "From Chicago, where should I take a weekend trip during the summer using points?" — where the discovery planner missed an explicitly-named origin. A related but distinct angle on the same area: even when an origin *is* extracted, it can resolve to a seats.aero multi-city/metro code (e.g. "CHI" for Chicago) rather than a literal airport IATA code — worth verifying every downstream consumer of `searchPlan.origins` handles synthetic multi-city codes the same way it handles real airport codes.
 - **A native route-arc map** instead of a deep-link handoff — full styling control, no cross-origin dependency.

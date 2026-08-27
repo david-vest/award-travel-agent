@@ -1,8 +1,9 @@
 import { StateGraph, START, END } from "@langchain/langgraph";
+import type { BaseCheckpointSaver } from "@langchain/langgraph";
 import { MongoDBSaver } from "@langchain/langgraph-checkpoint-mongodb";
 import { AIMessage } from "@langchain/core/messages";
 import { AgentState, type AgentStateType } from "./state";
-import { routeAfterGuard, routeAfterTriage, routeAfterSearch, routeAfterEnrich, routeAfterVerify } from "./routers";
+import { routeAfterClarification, routeAfterGuard, routeAfterTriage, routeAfterSearch, routeAfterEnrich, routeAfterVerify } from "./routers";
 import { guardInput, refuse } from "./nodes/guard";
 import { triage } from "./nodes/triage";
 import { prepareUiSearch } from "./nodes/prepare-ui-search";
@@ -17,6 +18,7 @@ import { retrieveKnowledgeNode } from "./nodes/retrieve";
 import { assessCandidateExperience } from "./nodes/assess-candidate-experience";
 import { updateRerankPreferences } from "./nodes/update-rerank-preferences";
 import { rankRecommendations } from "./nodes/rank-recommendations";
+import { clarifySearchConstraints } from "./nodes/clarify-search-constraints";
 import { synthesize } from "./nodes/synthesize";
 import { refreshAvailability } from "./nodes/refresh";
 import { verifyGroundedness } from "./nodes/verify";
@@ -74,6 +76,7 @@ function buildStateGraph() {
     .addNode("assess_candidate_experience", assessCandidateExperience)
     .addNode("update_rerank_preferences", updateRerankPreferences)
     .addNode("rank_recommendations", rankRecommendations)
+    .addNode("clarify_search_constraints", clarifySearchConstraints)
     .addNode("synthesize", synthesizeAndCount)
     .addNode("refresh_availability", refreshAvailability)
     .addNode("verify_groundedness", verifyGroundedness)
@@ -101,7 +104,12 @@ function buildStateGraph() {
     .addEdge("plan_discovery", "interpret_preferences")
     .addEdge("interpret_preferences", "search_awards")
     .addConditionalEdges("search_awards", routeAfterSearch, {
+      clarify_search_constraints: "clarify_search_constraints",
       refresh_availability: "refresh_availability",
+      build_candidate_shortlist: "build_candidate_shortlist",
+    })
+    .addConditionalEdges("clarify_search_constraints", routeAfterClarification, {
+      search_awards: "search_awards",
       build_candidate_shortlist: "build_candidate_shortlist",
     })
     .addEdge("refresh_availability", "build_candidate_shortlist")
@@ -129,6 +137,11 @@ export function buildGraphWithoutCheckpointer() {
   return buildStateGraph().compile();
 }
 
+/** Injectable checkpointed graph for interrupt/resume tests and alternate stores. */
+export function buildGraphWithCheckpointer(checkpointer: BaseCheckpointSaver) {
+  return buildStateGraph().compile({ checkpointer });
+}
+
 /**
  * Production graph. The Mongo checkpointer gives real thread persistence —
  * conversations survive a restart and can be resumed by thread_id.
@@ -137,5 +150,5 @@ export async function buildGraph() {
   const client = await mongoClient();
   const checkpointer = new MongoDBSaver({ client, dbName: DB_NAME });
 
-  return buildStateGraph().compile({ checkpointer });
+  return buildGraphWithCheckpointer(checkpointer);
 }

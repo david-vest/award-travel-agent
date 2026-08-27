@@ -1,10 +1,18 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import type { AgentEvent, AgentStage, FlightRecommendation, TripRequest } from "../src/contracts/travel-search";
+import type {
+  AgentEvent,
+  AgentFeedback,
+  AgentStage,
+  ClarificationChoiceId,
+  ClarificationRequest,
+  FlightRecommendation,
+  TripRequest,
+} from "../src/contracts/travel-search";
 import type { StoredAgentRun } from "../src/local/last-search";
 
-type RunStatus = "idle" | "running" | "complete" | "error";
+type RunStatus = "idle" | "running" | "clarification" | "complete" | "error";
 type StageState = Record<AgentStage, "waiting" | "active" | "complete">;
 type StageDetails = Record<AgentStage, string>;
 type StageDurations = Partial<Record<AgentStage, number>>;
@@ -21,6 +29,9 @@ export function useAgentRun() {
   const [answer, setAnswer] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [threadId, setThreadId] = useState<string | null>(null);
+  const [runId, setRunId] = useState<string | null>(null);
+  const [clarification, setClarification] = useState<ClarificationRequest | null>(null);
+  const [feedbackStatus, setFeedbackStatus] = useState<"idle" | "sending" | "saved" | "error">("idle");
   const controllerRef = useRef<AbortController | null>(null);
   const threadRef = useRef<string | null>(null);
 
@@ -28,6 +39,7 @@ export function useAgentRun() {
     if (event.type === "run_started") {
       threadRef.current = event.threadId;
       setThreadId(event.threadId);
+      setRunId(event.runId);
     } else if (event.type === "stage") {
       setStages((current) => ({ ...current, [event.stage]: event.status }));
       if (event.detail) setStageDetails((current) => ({ ...current, [event.stage]: event.detail! }));
@@ -35,7 +47,10 @@ export function useAgentRun() {
     } else if (event.type === "results") {
       setRecommendations(event.recommendations);
     } else if (event.type === "answer_delta") {
-      setAnswer(event.text);
+      setAnswer((current) => current + event.text);
+    } else if (event.type === "clarification_required") {
+      setClarification(event.clarification);
+      setStatus("clarification");
     } else if (event.type === "complete") {
       if (event.recommendations !== undefined) {
         setRecommendations(event.recommendations);
@@ -48,16 +63,21 @@ export function useAgentRun() {
     }
   }, []);
 
-  const start = useCallback(async (payload: { request?: TripRequest; message?: string }) => {
+  const start = useCallback(async (payload: { request?: TripRequest; message?: string; resume?: { choiceId: ClarificationChoiceId } }) => {
+    const isResume = Boolean(payload.resume);
     controllerRef.current?.abort();
     const controller = new AbortController();
     controllerRef.current = controller;
     setStatus("running");
-    setStages({ search: "active", rules: "waiting", rank: "waiting" });
-    setStageDetails(waitingDetails);
-    setStageDurations({});
+    if (!isResume) {
+      setStages({ search: "active", rules: "waiting", rank: "waiting" });
+      setStageDetails(waitingDetails);
+      setStageDurations({});
+    }
     setError(null);
     setAnswer("");
+    setClarification(null);
+    setFeedbackStatus("idle");
     if (payload.request) setRecommendations([]);
 
     try {
@@ -91,6 +111,29 @@ export function useAgentRun() {
     }
   }, [processEvent]);
 
+  const resumeClarification = useCallback((choiceId: ClarificationChoiceId) => {
+    if (!threadRef.current) return Promise.resolve();
+    return start({ resume: { choiceId } });
+  }, [start]);
+
+  const submitFeedback = useCallback(async (feedback: Omit<AgentFeedback, "runId">) => {
+    if (!runId) return false;
+    setFeedbackStatus("sending");
+    try {
+      const response = await fetch("/api/agent/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...feedback, runId }),
+      });
+      if (!response.ok) throw new Error("Feedback could not be saved.");
+      setFeedbackStatus("saved");
+      return true;
+    } catch {
+      setFeedbackStatus("error");
+      return false;
+    }
+  }, [runId]);
+
   const restore = useCallback((snapshot: StoredAgentRun) => {
     controllerRef.current?.abort();
     controllerRef.current = null;
@@ -103,6 +146,9 @@ export function useAgentRun() {
     setAnswer(snapshot.answer);
     setError(snapshot.error);
     setThreadId(snapshot.threadId);
+    setRunId(snapshot.runId ?? null);
+    setClarification(snapshot.clarification ?? null);
+    setFeedbackStatus("idle");
   }, []);
 
   const reset = useCallback(() => {
@@ -117,8 +163,29 @@ export function useAgentRun() {
     setAnswer("");
     setError(null);
     setThreadId(null);
+    setRunId(null);
+    setClarification(null);
+    setFeedbackStatus("idle");
   }, []);
 
   const cancel = useCallback(() => controllerRef.current?.abort(), []);
-  return { status, stages, stageDetails, stageDurations, recommendations, answer, error, threadId, start, restore, reset, cancel };
+  return {
+    status,
+    stages,
+    stageDetails,
+    stageDurations,
+    recommendations,
+    answer,
+    error,
+    threadId,
+    runId,
+    clarification,
+    feedbackStatus,
+    start,
+    resumeClarification,
+    submitFeedback,
+    restore,
+    reset,
+    cancel,
+  };
 }

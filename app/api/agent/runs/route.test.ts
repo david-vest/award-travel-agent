@@ -245,4 +245,79 @@ describe("POST /api/agent/runs", () => {
     expect(details).toContain("Reused the existing verified availability; no provider search was run.");
     expect(details).toContain("Reused cached itinerary details and qualitative evidence; no reassessment was needed.");
   });
+
+  it("emits ranked results before real synthesis token deltas", async () => {
+    mockGraphStream.mockImplementation(async function* () {
+      yield ["updates", { search_awards: { awardResults: [{ availabilityId: "avail-1" }] } }];
+      yield ["updates", { rank_recommendations: { recommendations: [sampleFlight] } }];
+      yield ["messages", [{ content: "Here are " }, { langgraph_node: "synthesize" }]];
+      yield ["messages", [{ content: "the best options." }, { langgraph_node: "synthesize" }]];
+      yield ["updates", { synthesize: { draft: "Here are the best options." } }];
+    });
+
+    const response = await POST(new Request("http://localhost/api/agent/runs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: "Search again",
+        threadId: "d0000000-0000-4000-8000-000000000000",
+      }),
+    }));
+    const events = await collectEvents(response);
+    const resultsIndex = events.findIndex((event) => event.type === "results");
+    const firstDeltaIndex = events.findIndex((event) => event.type === "answer_delta");
+    expect(resultsIndex).toBeGreaterThan(-1);
+    expect(firstDeltaIndex).toBeGreaterThan(resultsIndex);
+    expect(events.filter((event) => event.type === "answer_delta").map((event) => event.text)).toEqual([
+      "Here are ",
+      "the best options.",
+    ]);
+    expect(events.find((event) => event.type === "complete")).toMatchObject({
+      answer: "Here are the best options.",
+    });
+  });
+
+  it("emits a structured clarification and leaves the run resumable", async () => {
+    const clarification = {
+      id: "no-nonstop-premium-cabin",
+      prompt: "Which constraint should I relax?",
+      choices: [
+        { id: "allow_one_stop", label: "Allow one stop", description: "Keep business class." },
+        { id: "try_premium_economy", label: "Try premium economy", description: "Keep nonstop." },
+        { id: "keep_constraints", label: "Keep my brief", description: "Do not broaden." },
+      ],
+    };
+    mockGraphStream.mockImplementation(async function* () {
+      yield ["updates", { search_awards: { awardResults: [] } }];
+      yield ["updates", { __interrupt__: [{ value: clarification }] }];
+    });
+
+    const events = await collectEvents(await POST(new Request("http://localhost/api/agent/runs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: "Find nonstop business class",
+        threadId: "e0000000-0000-4000-8000-000000000000",
+      }),
+    })));
+
+    expect(events.find((event) => event.type === "clarification_required")).toMatchObject({ clarification });
+    expect(events.some((event) => event.type === "complete")).toBe(false);
+  });
+
+  it("resumes the same thread with a LangGraph Command", async () => {
+    mockGraphStream.mockImplementation(async function* () {
+      yield ["updates", { synthesize: { draft: "Resumed." } }];
+    });
+    const threadId = "f0000000-0000-4000-8000-000000000000";
+    const events = await collectEvents(await POST(new Request("http://localhost/api/agent/runs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ threadId, resume: { choiceId: "keep_constraints" } }),
+    })));
+
+    expect(mockGraphStream.mock.calls[0]?.[0]).toMatchObject({ lg_name: "Command" });
+    expect(events[0]).toMatchObject({ type: "run_started", threadId });
+    expect(events.find((event) => event.type === "complete")).toMatchObject({ answer: "Resumed." });
+  });
 });

@@ -611,4 +611,14 @@ describe("bounded positioning fallback", () => {
       tripSummaries: [{ availabilityId: "a", tripId: "t", flightNumbers: [], aircraft: [], carriers: [], stops: 1, totalTaxes: 900, taxesCurrency: "USD", durationMinutes: 900 }],
     } as unknown as AgentStateType)).toBe(true);
   });
+
+  it("does not broaden after the traveler explicitly keeps the exact constraints", () => {
+    expect(needsPositioningSearch({
+      intent: "route_search",
+      searchPlan: fukuokaPlan,
+      positioningSearchComplete: false,
+      awardResults: [],
+      clarificationResolution: "keep_constraints",
+    } as unknown as AgentStateType)).toBe(false);
+  });
 });

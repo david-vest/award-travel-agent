@@ -64,16 +64,43 @@ export const tripRequestSchema = z.object({
 export type TripRequest = z.infer<typeof tripRequestSchema>;
 export type { RankingPreference };
 
+export const CLARIFICATION_CHOICE_IDS = [
+  "allow_one_stop",
+  "try_premium_economy",
+  "keep_constraints",
+] as const;
+
+export type ClarificationChoiceId = (typeof CLARIFICATION_CHOICE_IDS)[number];
+
+export type ClarificationRequest = {
+  id: string;
+  prompt: string;
+  choices: Array<{
+    id: ClarificationChoiceId;
+    label: string;
+    description: string;
+  }>;
+};
+
+export const clarificationResumeSchema = z.object({
+  choiceId: z.enum(CLARIFICATION_CHOICE_IDS),
+});
+
 export const agentRunRequestSchema = z.object({
   threadId: z.string().uuid().optional(),
   request: tripRequestSchema.optional(),
   message: z.string().trim().min(1).max(2_000).optional(),
+  resume: clarificationResumeSchema.optional(),
 }).superRefine((value, ctx) => {
-  if (!value.request && !value.message) {
-    ctx.addIssue({ code: "custom", message: "A trip request or follow-up message is required." });
+  const inputCount = Number(Boolean(value.request)) + Number(Boolean(value.message)) + Number(Boolean(value.resume));
+  if (inputCount === 0) {
+    ctx.addIssue({ code: "custom", message: "A trip request, follow-up message, or clarification response is required." });
   }
-  if (value.request && value.message) {
-    ctx.addIssue({ code: "custom", message: "Provide either a structured trip request or a follow-up message, not both." });
+  if (inputCount > 1) {
+    ctx.addIssue({ code: "custom", message: "Provide only one run input at a time." });
+  }
+  if (value.resume && !value.threadId) {
+    ctx.addIssue({ code: "custom", path: ["threadId"], message: "A thread ID is required to resume a clarification." });
   }
 });
 
@@ -134,9 +161,30 @@ export type FlightRecommendation = {
 
 export type AgentStage = "search" | "rules" | "rank";
 export type AgentEvent =
-  | { type: "run_started"; threadId: string }
+  | { type: "run_started"; threadId: string; runId: string }
   | { type: "stage"; stage: AgentStage; status: "active" | "complete"; detail?: string; elapsedMs?: number }
   | { type: "results"; recommendations: FlightRecommendation[] }
   | { type: "answer_delta"; text: string }
+  | { type: "clarification_required"; clarification: ClarificationRequest }
   | { type: "complete"; answer: string; recommendations?: FlightRecommendation[]; searchRan?: boolean; refreshedAt?: string }
   | { type: "error"; code: string; message: string; retryable: boolean };
+
+export const agentFeedbackSchema = z.object({
+  runId: z.string().uuid(),
+  kind: z.enum(["rating", "selected_option"]),
+  rating: z.enum(["up", "down"]).optional(),
+  selectedOptionId: z.string().trim().min(1).max(200).optional(),
+  rankingVersion: z.string().trim().min(1).max(100),
+  preferenceProfile: rankingPreferenceSchema,
+  candidateIds: z.array(z.string().trim().min(1).max(200)).max(20),
+  evidenceIds: z.array(z.string().trim().min(1).max(200)).max(100),
+}).superRefine((value, ctx) => {
+  if (value.kind === "rating" && !value.rating) {
+    ctx.addIssue({ code: "custom", path: ["rating"], message: "A rating is required." });
+  }
+  if (value.kind === "selected_option" && !value.selectedOptionId) {
+    ctx.addIssue({ code: "custom", path: ["selectedOptionId"], message: "A selected option is required." });
+  }
+});
+
+export type AgentFeedback = z.infer<typeof agentFeedbackSchema>;

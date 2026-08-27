@@ -3,7 +3,11 @@ import type { BaseMessage } from "@langchain/core/messages";
 import type { AwardOption, TripSummary } from "../tools";
 import type { OptionEvidence, RetrievedDoc } from "../rag/retriever";
 import type { CandidateAssessments } from "../domain/candidate-assessment";
-import type { FlightRecommendation, TripRequest } from "../contracts/travel-search";
+import type {
+  ClarificationChoiceId,
+  FlightRecommendation,
+  TripRequest,
+} from "../contracts/travel-search";
 import {
   defaultRecommendationPreferences,
   type RecommendationPreferences,
@@ -198,6 +202,10 @@ export const AgentState = Annotation.Root({
   ),
   recommendationPreferences: Annotation<RecommendationPreferences>(
     replace<RecommendationPreferences>(defaultRecommendationPreferences),
+  ),
+  /** Per-turn answer to a consequential search-relaxation interrupt. */
+  clarificationResolution: Annotation<ClarificationChoiceId | null>(
+    replace<ClarificationChoiceId | null>(() => null),
   ),
 
   draft: Annotation<string | null>(replace<string | null>(() => null)),

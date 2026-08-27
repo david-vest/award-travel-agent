@@ -70,6 +70,27 @@ describe("parseLastSearchSnapshot", () => {
     expect(parseLastSearchSnapshot(JSON.stringify(pending))).toEqual(pending);
   });
 
+  it("restores a checkpointed clarification after a page or process restart", () => {
+    const clarification = {
+      ...snapshot,
+      run: {
+        ...snapshot.run!,
+        status: "clarification" as const,
+        runId: "10000000-0000-4000-8000-000000000000",
+        clarification: {
+          id: "no-nonstop-premium-cabin",
+          prompt: "Which constraint should I relax?",
+          choices: [
+            { id: "allow_one_stop" as const, label: "Allow one stop", description: "Keep business class." },
+            { id: "try_premium_economy" as const, label: "Try premium economy", description: "Keep nonstop." },
+            { id: "keep_constraints" as const, label: "Keep my brief", description: "Do not broaden." },
+          ],
+        },
+      },
+    };
+    expect(parseLastSearchSnapshot(JSON.stringify(clarification))).toEqual(clarification);
+  });
+
   it("restores older snapshots without chat history", () => {
     const legacySnapshot = JSON.parse(JSON.stringify(snapshot)) as Record<string, unknown>;
     delete legacySnapshot.chatMessages;

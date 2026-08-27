@@ -22,6 +22,7 @@ graph TD;
 	assess_candidate_experience(assess_candidate_experience)
 	update_rerank_preferences(update_rerank_preferences)
 	rank_recommendations(rank_recommendations)
+	clarify_search_constraints(clarify_search_constraints)
 	synthesize(synthesize)
 	refresh_availability(refresh_availability)
 	verify_groundedness(verify_groundedness)
@@ -54,6 +55,9 @@ graph TD;
 	triage -.-> update_rerank_preferences;
 	search_awards -.-> refresh_availability;
 	search_awards -.-> build_candidate_shortlist;
+	search_awards -.-> clarify_search_constraints;
+	clarify_search_constraints -.-> search_awards;
+	clarify_search_constraints -.-> build_candidate_shortlist;
 	enrich_trips -.-> search_positioning;
 	enrich_trips -.-> retrieve_knowledge;
 	verify_groundedness -.-> synthesize;

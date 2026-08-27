@@ -265,7 +265,12 @@ function reasonableOption(option: AwardOption, plan: SearchPlan, trip?: TripSumm
 
 /** Exact results are broadened when none clears the value/fees/duration gate. */
 export function needsPositioningSearch(state: AgentStateType): boolean {
-  if (state.intent === "discovery" || state.positioningSearchComplete || !state.searchPlan) return false;
+  if (
+    state.intent === "discovery" ||
+    state.clarificationResolution === "keep_constraints" ||
+    state.positioningSearchComplete ||
+    !state.searchPlan
+  ) return false;
   const trips = new Map((state.tripSummaries ?? []).map((trip) => [trip.availabilityId, trip]));
   return !(state.awardResults ?? []).some((option) => reasonableOption(option, state.searchPlan!, trips.get(option.availabilityId), true));
 }

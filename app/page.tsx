@@ -4,16 +4,18 @@ import {
   AirplaneTilt, ArrowsDownUp, ArrowLeft, ArrowRight, ArrowSquareOut, CalendarBlank, CaretDown,
   CaretLeft, CaretRight, Check, CheckCircle, GlobeHemisphereWest, LockKey,
   Funnel, MagnifyingGlass, MapPin, Minus, PaperPlaneTilt, Plus, Sparkle, Star, Trophy, User, X,
+  ThumbsDown, ThumbsUp,
 } from "@phosphor-icons/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { AWARD_PROGRAMS, CREDIT_CARD_PROGRAMS, type AwardProgramId, type CreditCardProgramId } from "../src/domain/programs";
 import { SUPPORTED_AIRLINES } from "../src/domain/airlines";
-import type { FlightRecommendation, TripRequest } from "../src/contracts/travel-search";
+import type { ClarificationChoiceId, FlightRecommendation, TripRequest } from "../src/contracts/travel-search";
 import {
   RANKING_EXPERIENCE_WEIGHTS,
   RANKING_LEVELS,
+  RECOMMENDATION_PIPELINE_VERSION,
   defaultRankingPreference,
   rankingLevelLabel,
   type RankingPreference,
@@ -110,6 +112,8 @@ export default function Home() {
   const chatMessageSequenceRef = useRef(0);
   const [followUp, setFollowUp] = useState("");
   const [chatMessages, setChatMessages] = useState<StoredChatMessage[]>([]);
+  const [rating, setRating] = useState<"up" | "down" | null>(null);
+  const [chosenOptionId, setChosenOptionId] = useState<string | null>(null);
   const agentRun = useAgentRun();
   const restoreAgentRun = agentRun.restore;
   const resetAgentRun = agentRun.reset;
@@ -200,7 +204,10 @@ export default function Home() {
   }, [resetAgentRun, resetSearchForm, restoreAgentRun]);
 
   useEffect(() => {
-    if ((agentRun.status !== "complete" && agentRun.status !== "error") || !lastSubmittedFormRef.current) return;
+    if (
+      (agentRun.status !== "clarification" && agentRun.status !== "complete" && agentRun.status !== "error") ||
+      !lastSubmittedFormRef.current
+    ) return;
     const run: StoredAgentRun = {
       status: agentRun.status,
       stages: agentRun.stages,
@@ -210,9 +217,11 @@ export default function Home() {
       answer: agentRun.answer,
       error: agentRun.error,
       threadId: agentRun.threadId,
+      runId: agentRun.runId,
+      clarification: agentRun.clarification,
     };
     writeLastSearch({ version: 1, savedAt: new Date().toISOString(), form: lastSubmittedFormRef.current, run, chatMessages });
-  }, [agentRun.answer, agentRun.error, agentRun.recommendations, agentRun.stageDetails, agentRun.stageDurations, agentRun.stages, agentRun.status, agentRun.threadId, chatMessages]);
+  }, [agentRun.answer, agentRun.clarification, agentRun.error, agentRun.recommendations, agentRun.runId, agentRun.stageDetails, agentRun.stageDurations, agentRun.stages, agentRun.status, agentRun.threadId, chatMessages]);
 
   const changeResultFilters = (next: FlightResultFilters) => {
     setResultFilters(next);
@@ -244,6 +253,8 @@ export default function Home() {
     setChatMessages([]);
     setCompareIds([]);
     setComparisonOpen(false);
+    setRating(null);
+    setChosenOptionId(null);
     writeLastSearch({ version: 1, savedAt: new Date().toISOString(), form, run: null, chatMessages: [] });
     const request: TripRequest = {
       origin: { code: origin.code, airports: origin.airports, custom: origin.kind === "custom" },
@@ -272,7 +283,7 @@ export default function Home() {
 
   const sendFollowUp = () => {
     const message = followUp.trim();
-    if (!message || running) return;
+    if (!message || running || agentRun.status === "clarification") return;
 
     const nextMessageId = (role: StoredChatMessage["role"]) => {
       chatMessageSequenceRef.current += 1;
@@ -285,7 +296,40 @@ export default function Home() {
       { id: nextMessageId("user"), role: "user", content: message },
     ]);
     setFollowUp("");
+    setRating(null);
     void agentRun.start({ message });
+  };
+
+  const resolveClarification = (choiceId: ClarificationChoiceId) => {
+    if (choiceId === "allow_one_stop") {
+      setStops("one");
+      if (lastSubmittedFormRef.current) lastSubmittedFormRef.current.stops = "one";
+    } else if (choiceId === "try_premium_economy") {
+      setCabins(["premium"]);
+      if (lastSubmittedFormRef.current) lastSubmittedFormRef.current.cabins = ["premium"];
+    }
+    void agentRun.resumeClarification(choiceId);
+  };
+
+  const feedbackContext = () => ({
+    rankingVersion: RECOMMENDATION_PIPELINE_VERSION,
+    preferenceProfile: rankingPreference,
+    candidateIds: allFlights.map((flight) => flight.id),
+    evidenceIds: [...new Set(allFlights.flatMap((flight) => flight.evidenceIds ?? []))],
+  });
+
+  const rateRecommendations = (nextRating: "up" | "down") => {
+    setRating(nextRating);
+    void agentRun.submitFeedback({ kind: "rating", rating: nextRating, ...feedbackContext() });
+  };
+
+  const chooseRecommendation = (optionId: string) => {
+    setChosenOptionId(optionId);
+    void agentRun.submitFeedback({
+      kind: "selected_option",
+      selectedOptionId: optionId,
+      ...feedbackContext(),
+    });
   };
 
   const clearSearch = () => {
@@ -428,7 +472,7 @@ export default function Home() {
         <section className={styles.researchPanel} aria-labelledby="research-heading">
           <div className={styles.researchHeader}>
             <div><h2 id="research-heading">Roam&apos;s research</h2><p>I&apos;m working across live award space and program rules to find the best value for you.</p></div>
-            <div className={styles.timestamp}><span>{agentRun.threadId ? `Thread ${agentRun.threadId.slice(0, 8)}` : "Ready to search"}</span><strong><i />{running ? "In progress" : agentRun.status === "error" ? "Needs attention" : agentRun.status === "complete" ? "Complete" : "Ready"}</strong></div>
+            <div className={styles.timestamp}><span>{agentRun.threadId ? `Thread ${agentRun.threadId.slice(0, 8)}` : "Ready to search"}</span><strong><i />{running ? "In progress" : agentRun.status === "clarification" ? "Waiting for you" : agentRun.status === "error" ? "Needs attention" : agentRun.status === "complete" ? "Complete" : "Ready"}</strong></div>
           </div>
 
           <div className={styles.researchFlow}>
@@ -447,7 +491,7 @@ export default function Home() {
           </div>
 
           <section className={`${styles.results} ${running ? styles.resultsWorking : ""}`} aria-labelledby="results-heading">
-            <div className={styles.resultsHeader}><div><h3 id="results-heading">Recommended flights</h3><p>{allFlights.length ? `${flights.length.toLocaleString()} of ${allFlights.length.toLocaleString()} options${filtersOpen || filterCount ? " shown" : ""}` : running ? "Searching live award space" : agentRun.status === "complete" ? "No matching options for this exact brief" : "Submit a trip brief to see verified options"}</p></div><div className={styles.carouselControls}><button onClick={() => moveCarousel(activeFlightIndex - 1)} disabled={activeFlightIndex === 0 || flights.length === 0} aria-label="Previous flight"><ArrowLeft size={18} /></button><button onClick={() => moveCarousel(activeFlightIndex + 1)} disabled={activeFlightIndex === flights.length - 1 || flights.length === 0} aria-label="Next flight"><ArrowRight size={18} /></button></div></div>
+            <div className={styles.resultsHeader}><div><h3 id="results-heading">Recommended flights</h3><p>{allFlights.length ? `${flights.length.toLocaleString()} of ${allFlights.length.toLocaleString()} options${filtersOpen || filterCount ? " shown" : ""}` : running ? "Searching live award space" : agentRun.status === "clarification" ? "One search constraint needs your decision" : agentRun.status === "complete" ? "No matching options for this exact brief" : "Submit a trip brief to see verified options"}</p></div><div className={styles.carouselControls}><button onClick={() => moveCarousel(activeFlightIndex - 1)} disabled={activeFlightIndex === 0 || flights.length === 0} aria-label="Previous flight"><ArrowLeft size={18} /></button><button onClick={() => moveCarousel(activeFlightIndex + 1)} disabled={activeFlightIndex === flights.length - 1 || flights.length === 0} aria-label="Next flight"><ArrowRight size={18} /></button></div></div>
             {allFlights.length > 0 && <div className={styles.resultsToolbar}>
               <label className={styles.sortControl}><ArrowsDownUp size={15} /><span>Sort</span><select value={flightSort} onChange={(event) => { setFlightSort(event.target.value as FlightSort); setActiveFlight(0); railRef.current?.scrollTo({ left: 0 }); }}>{FLIGHT_SORT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select><CaretDown size={12} weight="bold" /></label>
               <button className={filterCount ? styles.filtersActive : ""} onClick={() => setFiltersOpen(true)}><Funnel size={15} weight={filterCount ? "fill" : "regular"} />Filters{filterCount > 0 && <span>{filterCount}</span>}</button>
@@ -477,20 +521,26 @@ export default function Home() {
                 <div className={styles.reason}><strong>Decision tradeoff</strong><p>{flight.reason}</p>{flight.assessmentConfidence === "low" && !(flight.evidenceIds?.length) && <small>Experience evidence unavailable; journey score uses objective flight facts.</small>}</div>
                 <div className={styles.cardActions}>
                   <button className={styles.compareToggle} aria-pressed={selectedForComparison} disabled={!selectedForComparison && compareIds.length >= 3} onClick={(event) => { event.stopPropagation(); setCompareIds((current) => selectedForComparison ? current.filter((id) => id !== flight.id) : [...current, flight.id].slice(0, 3)); }}>{selectedForComparison ? <Check size={15} weight="bold" /> : <Plus size={15} />} {selectedForComparison ? "Selected" : "Compare"}</button>
+                  <button className={styles.chooseButton} aria-pressed={chosenOptionId === flight.id} onClick={(event) => { event.stopPropagation(); chooseRecommendation(flight.id); }}>{chosenOptionId === flight.id ? <Check size={15} weight="bold" /> : null}{chosenOptionId === flight.id ? "My choice" : "I’d choose this"}</button>
                   <button className={styles.reviewButton} onClick={(event) => { event.stopPropagation(); setActiveFlight(index); setBookingOpen(true); }}>Review itinerary <ArrowRight size={18} weight="bold" /></button>
                 </div>
               </article>;})}
-              {!flights.length && <div className={styles.emptyResults}>{agentRun.error ? agentRun.error : running ? "Roam is checking live award availability…" : allFlights.length ? "No flights match these result filters. Clear or widen a filter to see more options." : "Your ranked, grounded recommendations will appear here."}</div>}
+              {!flights.length && <div className={styles.emptyResults}>{agentRun.error ? agentRun.error : running ? "Roam is checking live award availability…" : agentRun.status === "clarification" ? "Choose how Roam should relax the search below." : allFlights.length ? "No flights match these result filters. Clear or widen a filter to see more options." : "Your ranked, grounded recommendations will appear here."}</div>}
             </div>
             {flights.length > 0 && <><div className={styles.scrollTrack}><span style={{ width: `${100 / flights.length}%`, transform: `translateX(${activeFlightIndex * 100}%)` }} /></div><p className={styles.scrollHint}>Scroll through verified options · select 2–3 to compare side by side.</p></>}
-            {(chatMessages.length > 0 || analysisPending || agentRun.answer) && <div className={styles.chatThread} aria-label="Follow-up conversation">
+            {(chatMessages.length > 0 || analysisPending || agentRun.answer || agentRun.clarification) && <div className={styles.chatThread} aria-label="Follow-up conversation">
               {chatMessages.map((message) => message.role === "user"
                 ? <div className={styles.userMessage} key={message.id}><div className={styles.userMessageLabel}>You</div><p>{message.content}</p></div>
                 : <div className={styles.agentAnswer} key={message.id}><div className={styles.agentAnswerLabel}><Sparkle size={15} weight="fill" /> Roam</div><ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown></div>)}
               {analysisPending && <div className={`${styles.agentAnswer} ${styles.agentAnswerPending}`} role="status" aria-live="polite"><div className={styles.agentAnswerLabel}><span className={styles.analysisSpinner} aria-hidden="true" /> Roam&apos;s analysis</div><p>{allFlights.length ? "The recommended flights are ready. Roam is finishing the comparison and booking analysis…" : "Roam is preparing the flight analysis…"}</p></div>}
-              {agentRun.answer && <div className={styles.agentAnswer}><div className={styles.agentAnswerLabel}><Sparkle size={15} weight="fill" /> Roam&apos;s analysis</div><ReactMarkdown remarkPlugins={[remarkGfm]}>{agentRun.answer}</ReactMarkdown></div>}
+              {agentRun.clarification && <div className={styles.clarificationCard} role="group" aria-labelledby="clarification-prompt">
+                <div className={styles.agentAnswerLabel}><Sparkle size={15} weight="fill" /> One decision needed</div>
+                <strong id="clarification-prompt">{agentRun.clarification.prompt}</strong>
+                <div className={styles.clarificationChoices}>{agentRun.clarification.choices.map((choice) => <button key={choice.id} disabled={running} onClick={() => resolveClarification(choice.id)}><span>{choice.label}</span><small>{choice.description}</small></button>)}</div>
+              </div>}
+              {agentRun.answer && <div className={styles.agentAnswer}><div className={styles.agentAnswerLabel}><Sparkle size={15} weight="fill" /> Roam&apos;s analysis</div><ReactMarkdown remarkPlugins={[remarkGfm]}>{agentRun.answer}</ReactMarkdown>{agentRun.status === "complete" && <div className={styles.answerFeedback}><span>Was this recommendation useful?</span><button aria-label="Useful recommendation" aria-pressed={rating === "up"} onClick={() => rateRecommendations("up")}><ThumbsUp size={15} weight={rating === "up" ? "fill" : "regular"} /></button><button aria-label="Not useful recommendation" aria-pressed={rating === "down"} onClick={() => rateRecommendations("down")}><ThumbsDown size={15} weight={rating === "down" ? "fill" : "regular"} /></button><small aria-live="polite">{agentRun.feedbackStatus === "saved" ? "Saved" : agentRun.feedbackStatus === "error" ? "Couldn’t save" : ""}</small></div>}</div>}
             </div>}
-            <div className={styles.followUp}><input value={followUp} onChange={(event) => setFollowUp(event.target.value)} placeholder="Ask Roam a follow-up…" onKeyDown={(event) => { if (event.key === "Enter") sendFollowUp(); }} /><button aria-label="Send follow-up" disabled={!followUp.trim() || running} onClick={sendFollowUp}><PaperPlaneTilt size={16} /></button></div>
+            <div className={styles.followUp}><input value={followUp} disabled={agentRun.status === "clarification"} onChange={(event) => setFollowUp(event.target.value)} placeholder={agentRun.status === "clarification" ? "Choose an option above to continue" : "Ask Roam a follow-up…"} onKeyDown={(event) => { if (event.key === "Enter") sendFollowUp(); }} /><button aria-label="Send follow-up" disabled={!followUp.trim() || running || agentRun.status === "clarification"} onClick={sendFollowUp}><PaperPlaneTilt size={16} /></button></div>
           </section>
         </section>
       </main>

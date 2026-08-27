@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { HumanMessage } from "@langchain/core/messages";
+import { Command, isInterrupted, MemorySaver } from "@langchain/langgraph";
 import type { AgentStateType } from "./state";
 
 // Mock every node module so traversal can be asserted without live model,
@@ -29,7 +30,7 @@ vi.mock("./nodes/update-rerank-preferences", () => ({ updateRerankPreferences: v
 vi.mock("./nodes/rank-recommendations", () => ({ rankRecommendations: vi.fn() }));
 vi.mock("./nodes/synthesize", () => ({ synthesize: vi.fn() }));
 
-import { buildGraphWithoutCheckpointer } from "./graph";
+import { buildGraphWithCheckpointer, buildGraphWithoutCheckpointer } from "./graph";
 import { guardInput, refuse } from "./nodes/guard";
 import { triage } from "./nodes/triage";
 import { planSearch, setPlanSearchClock } from "./nodes/plan-search";
@@ -72,6 +73,7 @@ describe("graph", () => {
       "assess_candidate_experience",
       "update_rerank_preferences",
       "rank_recommendations",
+      "clarify_search_constraints",
       "synthesize",
     ]) {
       expect(nodes).toContain(expected);
@@ -268,6 +270,44 @@ describe("graph traversal", () => {
     expect(visited).toContain("plan_search");
     expect(visited).toContain("search_awards");
     expect(visited).not.toContain("update_rerank_preferences");
+  });
+
+  it("resumes an interrupted search without replaying the completed provider node", async () => {
+    vi.mocked(prepareUiSearch).mockImplementation(rec("prepare_ui_search", {
+      searchPlan: {
+        origins: ["SFO"], destinations: ["HND"], cabins: ["business"], programs: [],
+        nonstopOnly: true, stopPreference: "nonstop",
+      },
+    }));
+    vi.mocked(searchAwards).mockImplementation(rec("search_awards", {
+      awardResults: [], searchStatus: "searched",
+    }));
+    vi.mocked(searchAwards).mockClear();
+    const checkpointer = new MemorySaver();
+    const graphBeforeRestart = buildGraphWithCheckpointer(checkpointer);
+    const config = { configurable: { thread_id: "phase-8-resume" } };
+    const tripRequest: NonNullable<AgentStateType["tripRequest"]> = {
+      origin: { code: "SFO", airports: ["SFO"], custom: false },
+      destinations: [{ code: "HND", airports: ["HND"], custom: false }],
+      startDate: "2026-09-18", endDate: "2026-09-27", flexDays: 0,
+      cabins: ["business"], travelers: 1, stopPreference: "nonstop",
+      preferredAirlines: [], creditCardPrograms: [], awardPrograms: [],
+      pointBalances: { creditCards: {}, awardPrograms: {} },
+    };
+
+    const paused = await graphBeforeRestart.invoke({
+      messages: [new HumanMessage("structured search")], tripRequest,
+    }, config);
+    expect(isInterrupted(paused)).toBe(true);
+    expect(searchAwards).toHaveBeenCalledTimes(1);
+
+    // A fresh compiled graph sharing the durable checkpointer simulates the
+    // production process restarting before the traveler answers.
+    const graphAfterRestart = buildGraphWithCheckpointer(checkpointer);
+    const completed = await graphAfterRestart.invoke(new Command({ resume: "keep_constraints" }), config);
+    expect(isInterrupted(completed)).toBe(false);
+    expect(searchAwards).toHaveBeenCalledTimes(1);
+    expect(visited).toContain("rank_recommendations");
   });
 
   it("skips every downstream node and goes straight to emit when guard rejects", async () => {

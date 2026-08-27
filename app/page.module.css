@@ -268,6 +268,8 @@
 .cardActions .compareToggle { flex: 0 0 auto; background: transparent; color: var(--green); }
 .cardActions .compareToggle[aria-pressed="true"] { background: var(--sage); }
 .cardActions .compareToggle:disabled { opacity: .42; cursor: not-allowed; }
+.cardActions .chooseButton { flex: 0 0 auto; border-color: #8ca396; background: transparent; color: var(--green); }
+.cardActions .chooseButton[aria-pressed="true"] { border-color: var(--green); background: var(--sage); }
 .cardActions .reviewButton { flex: 1; background: var(--green); color: white; }
 .cardActions .reviewButton:hover { background: var(--green-deep); }
 .scrollTrack { width: 42%; height: 4px; margin: 10px auto 0; border-radius: 8px; background: #dedfd9; overflow: hidden; }
@@ -297,6 +299,19 @@
 .agentAnswer a { color: var(--green); font-weight: 650; text-decoration: underline; text-underline-offset: 2px; }
 .agentAnswer code { padding: 2px 4px; border-radius: 4px; background: rgba(255,255,255,.65); font-size: .92em; }
 .agentAnswer table { width: 100%; margin: 10px 0; border-collapse: collapse; font-size: 11px; }.agentAnswer th, .agentAnswer td { padding: 7px; border: 1px solid var(--line-strong); text-align: left; }.agentAnswer th { background: rgba(255,255,255,.55); }
+.clarificationCard { padding: 18px 20px; border: 1px solid #b9cdbf; border-left: 4px solid var(--green); border-radius: 8px; background: rgba(231,239,232,.72); color: var(--ink); }
+.clarificationCard > strong { display: block; font-family: var(--font-display); font-size: 17px; line-height: 1.35; }
+.clarificationChoices { margin-top: 13px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.clarificationChoices button { min-height: 78px; padding: 11px; border: 1px solid #9caf9f; border-radius: 7px; background: rgba(255,255,255,.62); color: var(--ink); text-align: left; cursor: pointer; }
+.clarificationChoices button:hover:not(:disabled) { border-color: var(--green); background: white; }
+.clarificationChoices button span, .clarificationChoices button small { display: block; }
+.clarificationChoices button span { color: var(--green); font-weight: 750; }
+.clarificationChoices button small { margin-top: 5px; color: var(--muted); font: inherit; font-size: 10px; line-height: 1.4; }
+.answerFeedback { margin-top: 14px; padding-top: 11px; border-top: 1px solid rgba(19,88,61,.18); display: flex; align-items: center; gap: 7px; }
+.answerFeedback span { margin-right: 2px; color: var(--muted); font-size: 11px; }
+.answerFeedback button { width: 31px; height: 29px; border: 1px solid #9caf9f; border-radius: 5px; background: rgba(255,255,255,.55); color: var(--green); display: grid; place-items: center; cursor: pointer; }
+.answerFeedback button[aria-pressed="true"] { border-color: var(--green); background: white; }
+.answerFeedback small { color: var(--muted); }
 
 @media (prefers-reduced-motion: reduce) {
   .analysisSpinner { animation: none; }
@@ -365,6 +380,8 @@
   .header { padding: 0 17px; gap: 24px; }.brand { font-size: 30px; }.nav { gap: 18px; }
   .searchPanel, .researchPanel { padding: 30px 18px; }
   .fields { grid-template-columns: 1fr; }
+  .clarificationChoices { grid-template-columns: 1fr; }
+  .cardActions { flex-wrap: wrap; }
   .researchHeader { flex-direction: column; }.timestamp { align-items: flex-start; }
   .researchStep { grid-template-columns: 40px 1fr; gap: 8px; }.researchStep:not(:last-child)::after { left: 19px; }
   .filterHeading small { display: none; }.filterRow { grid-template-columns: 1fr; }

@@ -59,6 +59,7 @@ const RESET_TURN_STATE: Partial<AgentStateType> = {
   refusalReason: null,
   refreshedAt: null,
   degradedReasons: [],
+  clarificationResolution: null,
 };
 
 export async function guardInput(
